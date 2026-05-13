@@ -1,14 +1,27 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
-import { MessageCircle, Save, Trash2 } from "lucide-vue-next";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import {
+  MessageCircle,
+  Save,
+  Trash2,
+  Paperclip,
+  Upload,
+  Download,
+  X,
+} from "lucide-vue-next";
 import ModalShell from "./ModalShell.vue";
-import { commentApi, getErrorMessage, issueApi } from "../services/api";
+import {
+  attachmentApi,
+  commentApi,
+  getErrorMessage,
+  issueApi,
+} from "../services/api";
 import { getUser } from "../utils/storage";
 
 const props = defineProps({
   projectId: { type: [String, Number], required: true },
   issue: { type: Object, required: true },
-  members: { type: Array, default: () => [] }
+  members: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["close", "changed", "deleted"]);
@@ -20,17 +33,22 @@ const error = ref("");
 const comments = ref([]);
 const commentText = ref("");
 const commentLoading = ref(false);
-
+const attachments = ref([]);
+const attachmentInput = ref(null);
+const attachmentLoading = ref(false);
+const uploadingAttachment = ref(false);
 const form = reactive({
   title: props.issue.title,
   description: props.issue.description || "",
   issue_type: props.issue.issue_type,
   priority: props.issue.priority,
-  assignee_id: props.issue.assignee_id || ""
+  assignee_id: props.issue.assignee_id || "",
 });
 
 const assigneeName = computed(() => {
-  const member = props.members.find((item) => item.user_id === props.issue.assignee_id);
+  const member = props.members.find(
+    (item) => item.user_id === props.issue.assignee_id,
+  );
   return member?.user?.full_name || "Unassigned";
 });
 
@@ -47,7 +65,7 @@ async function saveIssue() {
       description: form.description.trim() || null,
       issue_type: form.issue_type,
       priority: form.priority,
-      assignee_id: form.assignee_id ? Number(form.assignee_id) : null
+      assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
     });
     emit("changed", updated);
   } catch (err) {
@@ -86,11 +104,103 @@ async function addComment() {
   }
 }
 
-onMounted(loadComments);
+async function loadAttachments() {
+  attachmentLoading.value = true;
+  try {
+    attachments.value = await attachmentApi.list(props.issue.id);
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    attachmentLoading.value = false;
+  }
+}
+
+async function uploadAttachment(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (file.size > 10 * 1024 * 1024) {
+    error.value = "File size must be less than 10MB";
+    event.target.value = "";
+    return;
+  }
+
+  uploadingAttachment.value = true;
+  error.value = "";
+
+  try {
+    await attachmentApi.upload(props.issue.id, file);
+    event.target.value = "";
+    await loadAttachments();
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    uploadingAttachment.value = false;
+  }
+}
+
+async function downloadAttachment(attachment) {
+  try {
+    const blob = await attachmentApi.download(props.issue.id, attachment.id);
+    const url = window.URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = attachment.original_name;
+    document.body.appendChild(link);
+    link.click();
+
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function deleteAttachment(attachment) {
+  if (!confirm(`Delete file "${attachment.original_name}"?`)) return;
+
+  try {
+    await attachmentApi.remove(props.issue.id, attachment.id);
+    attachments.value = attachments.value.filter(
+      (item) => item.id !== attachment.id,
+    );
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function onAttachmentRealtime(event) {
+  const issueId = Number(event.detail?.issue_id);
+  if (issueId === Number(props.issue.id)) {
+    loadAttachments();
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([loadComments(), loadAttachments()]);
+  window.addEventListener("jira-attachment-refresh", onAttachmentRealtime);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("jira-attachment-refresh", onAttachmentRealtime);
+});
 </script>
 
 <template>
-  <ModalShell :title="issue.code" :subtitle="`Assigned to ${assigneeName}`" wide @close="emit('close')">
+  <ModalShell
+    :title="issue.code"
+    :subtitle="`Assigned to ${assigneeName}`"
+    wide
+    @close="emit('close')"
+  >
     <div class="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div class="space-y-4">
         <div>
@@ -100,21 +210,108 @@ onMounted(loadComments);
 
         <div>
           <label class="label">Description</label>
-          <textarea v-model="form.description" class="input min-h-44 resize-none"></textarea>
+          <textarea
+            v-model="form.description"
+            class="input min-h-44 resize-none"
+          ></textarea>
         </div>
 
-        <p v-if="error" class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{{ error }}</p>
+        <p
+          v-if="error"
+          class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700"
+        >
+          {{ error }}
+        </p>
 
         <div class="flex flex-wrap gap-3">
           <button class="btn-primary" :disabled="loading" @click="saveIssue">
             <Save class="h-4 w-4" />
-            {{ loading ? 'Saving...' : 'Save changes' }}
+            {{ loading ? "Saving..." : "Save changes" }}
           </button>
           <button class="btn-danger" :disabled="deleting" @click="deleteIssue">
             <Trash2 class="h-4 w-4" />
-            {{ deleting ? 'Deleting...' : 'Delete' }}
+            {{ deleting ? "Deleting..." : "Delete" }}
           </button>
         </div>
+
+        <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <Paperclip class="h-5 w-5 text-slate-500" />
+              <h3 class="font-black text-slate-950">Attachments</h3>
+            </div>
+
+            <div>
+              <input
+                ref="attachmentInput"
+                type="file"
+                class="hidden"
+                @change="uploadAttachment"
+              />
+
+              <button
+                type="button"
+                class="btn-secondary"
+                :disabled="uploadingAttachment"
+                @click="attachmentInput?.click()"
+              >
+                <Upload class="h-4 w-4" />
+                {{ uploadingAttachment ? "Uploading..." : "Upload" }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="attachmentLoading"
+            class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+          >
+            Loading attachments...
+          </div>
+
+          <div v-else class="space-y-3">
+            <div
+              v-for="attachment in attachments"
+              :key="attachment.id"
+              class="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm"
+            >
+              <div class="min-w-0">
+                <p class="truncate text-sm font-black text-slate-900">
+                  {{ attachment.original_name }}
+                </p>
+                <p class="mt-1 text-xs text-slate-400">
+                  {{ formatFileSize(attachment.size_bytes) }}
+                  ·
+                  {{ new Date(attachment.created_at).toLocaleString() }}
+                </p>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  @click="downloadAttachment(attachment)"
+                >
+                  <Download class="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  class="rounded-xl border border-rose-200 p-2 text-rose-500 hover:bg-rose-50"
+                  @click="deleteAttachment(attachment)"
+                >
+                  <X class="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <p
+              v-if="attachments.length === 0"
+              class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+            >
+              No attachments yet.
+            </p>
+          </div>
+        </section>
 
         <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div class="mb-4 flex items-center gap-2">
@@ -123,19 +320,41 @@ onMounted(loadComments);
           </div>
 
           <form class="mb-4 flex gap-2" @submit.prevent="addComment">
-            <input v-model="commentText" class="input" placeholder="Write a comment..." />
-            <button class="btn-primary whitespace-nowrap" :disabled="commentLoading">Send</button>
+            <input
+              v-model="commentText"
+              class="input"
+              placeholder="Write a comment..."
+            />
+            <button
+              class="btn-primary whitespace-nowrap"
+              :disabled="commentLoading"
+            >
+              Send
+            </button>
           </form>
 
           <div class="space-y-3">
-            <div v-for="comment in comments" :key="comment.id" class="rounded-2xl bg-white p-4 shadow-sm">
+            <div
+              v-for="comment in comments"
+              :key="comment.id"
+              class="rounded-2xl bg-white p-4 shadow-sm"
+            >
               <div class="mb-1 flex items-center justify-between gap-2">
-                <p class="text-sm font-black text-slate-900">{{ comment.author.full_name }}</p>
-                <p class="text-xs text-slate-400">{{ new Date(comment.created_at).toLocaleString() }}</p>
+                <p class="text-sm font-black text-slate-900">
+                  {{ comment.author.full_name }}
+                </p>
+                <p class="text-xs text-slate-400">
+                  {{ new Date(comment.created_at).toLocaleString() }}
+                </p>
               </div>
               <p class="text-sm leading-6 text-slate-600">{{ comment.body }}</p>
             </div>
-            <p v-if="comments.length === 0" class="rounded-2xl bg-white p-4 text-sm text-slate-500">No comments yet.</p>
+            <p
+              v-if="comments.length === 0"
+              class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+            >
+              No comments yet.
+            </p>
           </div>
         </section>
       </div>
@@ -162,15 +381,25 @@ onMounted(loadComments);
           <label class="label">Assignee</label>
           <select v-model="form.assignee_id" class="input">
             <option value="">Unassigned</option>
-            <option v-for="member in members" :key="member.user_id" :value="member.user_id">
+            <option
+              v-for="member in members"
+              :key="member.user_id"
+              :value="member.user_id"
+            >
               {{ member.user.full_name }}
             </option>
           </select>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
           <p><b>Reporter ID:</b> {{ issue.reporter_id || currentUser?.id }}</p>
-          <p><b>Created:</b> {{ new Date(issue.created_at).toLocaleDateString() }}</p>
-          <p><b>Updated:</b> {{ new Date(issue.updated_at).toLocaleDateString() }}</p>
+          <p>
+            <b>Created:</b>
+            {{ new Date(issue.created_at).toLocaleDateString() }}
+          </p>
+          <p>
+            <b>Updated:</b>
+            {{ new Date(issue.updated_at).toLocaleDateString() }}
+          </p>
         </div>
       </aside>
     </div>

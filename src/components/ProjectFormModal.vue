@@ -36,7 +36,7 @@ async function submit() {
 </script>
 
 <template>
-  <ModalShell title="Create project" subtitle="Mỗi project sẽ tự có 4 cột mặc định: TO DO, IN PROGRESS, REVIEW, DONE." @close="emit('close')">
+  <ModalShell title="Create project" subtitle="" @close="emit('close')">
     <form class="space-y-4" @submit.prevent="submit">
       <div>
         <label class="label">Project name</label>

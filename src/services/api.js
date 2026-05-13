@@ -161,4 +161,36 @@ export const notificationApi = {
   }
 };
 
+export const attachmentApi = {
+  async list(issueId) {
+    const { data } = await api.get(`/issues/${issueId}/attachments`);
+    return data;
+  },
+
+  async upload(issueId, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const { data } = await api.post(`/issues/${issueId}/attachments`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      }
+    });
+
+    return data;
+  },
+
+  async download(issueId, attachmentId) {
+    const response = await api.get(`/issues/${issueId}/attachments/${attachmentId}/download`, {
+      responseType: "blob"
+    });
+
+    return response.data;
+  },
+
+  async remove(issueId, attachmentId) {
+    await api.delete(`/issues/${issueId}/attachments/${attachmentId}`);
+  }
+};
+
 export { api, getErrorMessage };
