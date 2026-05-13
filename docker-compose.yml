@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: jira_clone_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jira_user
+      POSTGRES_PASSWORD: jira_password
+      POSTGRES_DB: jira_clone
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
