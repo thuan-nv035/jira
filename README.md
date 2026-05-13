@@ -55,20 +55,6 @@ Mở trình duyệt:
 
 ```txt
 http://127.0.0.1:5173
-```
-
-## Lưu ý Tailwind
-
-Project đã khóa Tailwind về bản `3.4.17` để tránh lỗi PostCSS của Tailwind v4.
-
-Nếu trước đó bạn đã cài bản `latest`, hãy xóa và cài lại:
-
-```powershell
-Remove-Item -Recurse -Force node_modules
-Remove-Item -Force package-lock.json
-npm install
-npm run dev
-```
 
 ## Luồng test nhanh
 
