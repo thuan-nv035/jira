@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user, require_project_member
+from app.deps import get_current_user, require_project_editor, require_project_member
 from app.models import ChecklistItem, Issue, User
 from app.schemas import ChecklistCreate, ChecklistOut, ChecklistUpdate
 from app.services.activity_logs import create_activity_log
@@ -80,7 +80,7 @@ async def create_checklist(
     db: AsyncSession = Depends(get_db),
 ):
     issue = await _get_issue_and_check_member(db, issue_id, current_user.id)
-
+    await require_project_editor(db, issue.project_id, current_user.id)
     title = payload.title.strip()
 
     if not title:
@@ -162,6 +162,8 @@ async def update_checklist(
         checklist_id,
         current_user.id,
     )
+
+    await require_project_editor(db, issue.project_id, current_user.id)
 
     before = {
         "title": checklist.title,
@@ -259,6 +261,8 @@ async def delete_checklist(
         checklist_id,
         current_user.id,
     )
+
+    await require_project_editor(db, issue.project_id, current_user.id)
 
     deleted_value = {
         "checklist_id": checklist.id,

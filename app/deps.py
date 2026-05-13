@@ -50,9 +50,51 @@ async def require_project_member(db: AsyncSession, project_id: int, user_id: int
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this project")
     return member
 
-
 async def require_project_admin(db: AsyncSession, project_id: int, user_id: int) -> ProjectMember:
     member = await require_project_member(db, project_id, user_id)
     if member.role not in {"OWNER", "ADMIN"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin permission required")
+    return member
+
+PROJECT_ROLES = {
+    "OWNER": 4,
+    "ADMIN": 3,
+    "MEMBER": 2,
+    "VIEWER": 1,
+}
+
+
+def has_role_at_least(current_role: str, required_role: str) -> bool:
+    return PROJECT_ROLES.get(current_role, 0) >= PROJECT_ROLES.get(required_role, 0)
+
+
+async def require_project_owner(
+    db: AsyncSession,
+    project_id: int,
+    user_id: int,
+) -> ProjectMember:
+    member = await require_project_member(db, project_id, user_id)
+
+    if member.role != "OWNER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner permission required",
+        )
+
+    return member
+
+
+async def require_project_editor(
+    db: AsyncSession,
+    project_id: int,
+    user_id: int,
+) -> ProjectMember:
+    member = await require_project_member(db, project_id, user_id)
+
+    if member.role not in {"OWNER", "ADMIN", "MEMBER"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Edit permission required",
+        )
+
     return member

@@ -3,7 +3,7 @@ from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.activity_logs import create_activity_log
 from app.database import get_db
-from app.deps import get_current_user, require_project_member
+from app.deps import get_current_user, require_project_editor, require_project_member
 from app.models import BoardColumn, ChecklistItem, Issue, IssueAttachment, Project, ProjectMember, User
 from app.schemas import IssueCreate, IssueMove, IssueOut, IssueUpdate
 from app.services.notifications import notify_project_members
@@ -169,7 +169,7 @@ async def list_issues(
 
 @router.post("", response_model=IssueOut, status_code=status.HTTP_201_CREATED)
 async def create_issue(project_id: int, payload: IssueCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_editor(db, project_id, current_user.id)
     await _check_column(db, project_id, payload.column_id)
     await _check_assignee(db, project_id, payload.assignee_id)
 
@@ -390,12 +390,11 @@ async def get_issue(project_id: int, issue_id: int, current_user: User = Depends
 
 @router.patch("/{issue_id}", response_model=IssueOut)
 async def update_issue(project_id: int, issue_id: int, payload: IssueUpdate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_editor(db, project_id, current_user.id)
     result = await db.execute(select(Issue).where(Issue.id == issue_id, Issue.project_id == project_id))
     issue = result.scalar_one_or_none()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-    await require_project_member(db, project_id, current_user.id)
 
     before = _issue_activity_snapshot(issue)
     data = payload.model_dump(exclude_unset=True)
@@ -450,7 +449,7 @@ async def update_issue(project_id: int, issue_id: int, payload: IssueUpdate, cur
 
 @router.patch("/{issue_id}/move", response_model=IssueOut)
 async def move_issue(project_id: int, issue_id: int, payload: IssueMove, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_editor(db, project_id, current_user.id)
     await _check_column(db, project_id, payload.column_id)
 
     result = await db.execute(select(Issue).where(Issue.id == issue_id, Issue.project_id == project_id))
@@ -512,7 +511,7 @@ async def move_issue(project_id: int, issue_id: int, payload: IssueMove, current
 
 @router.delete("/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_issue(project_id: int, issue_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_editor(db, project_id, current_user.id)
     result = await db.execute(select(Issue).where(Issue.id == issue_id, Issue.project_id == project_id))
     issue = result.scalar_one_or_none()
     if not issue:

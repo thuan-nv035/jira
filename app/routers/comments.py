@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.deps import get_current_user, require_project_member
+from app.deps import get_current_user, require_project_editor, require_project_member
 from app.models import Comment, Issue, User
 from app.schemas import CommentCreate, CommentOut
 from app.services.notifications import notify_project_members
@@ -36,7 +36,7 @@ async def list_comments(issue_id: int, current_user: User = Depends(get_current_
 
 @router.post("", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
 async def create_comment(issue_id: int, payload: CommentCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    issue = await _get_issue_and_check_member(db, issue_id, current_user.id)
+    issue = await require_project_editor(db, issue_id, current_user.id)
     comment = Comment(issue_id=issue_id, author_id=current_user.id, body=payload.body)
     db.add(comment)
     await db.commit()

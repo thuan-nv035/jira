@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user, require_project_member
+from app.deps import get_current_user, require_project_admin, require_project_member
 from app.models import BoardColumn, Issue, User
 from app.schemas import ColumnCreate, ColumnOut, ColumnUpdate
 from app.websocket_manager import manager
@@ -22,7 +22,7 @@ async def list_columns(project_id: int, current_user: User = Depends(get_current
 
 @router.post("", response_model=ColumnOut, status_code=status.HTTP_201_CREATED)
 async def create_column(project_id: int, payload: ColumnCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_admin(db, project_id, current_user.id)
     column = BoardColumn(project_id=project_id, name=payload.name, position=payload.position)
     db.add(column)
     await db.commit()
@@ -33,7 +33,7 @@ async def create_column(project_id: int, payload: ColumnCreate, current_user: Us
 
 @router.patch("/{column_id}", response_model=ColumnOut)
 async def update_column(project_id: int, column_id: int, payload: ColumnUpdate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_admin(db, project_id, current_user.id)
     result = await db.execute(
         select(BoardColumn).where(BoardColumn.id == column_id, BoardColumn.project_id == project_id)
     )
@@ -53,7 +53,7 @@ async def update_column(project_id: int, column_id: int, payload: ColumnUpdate, 
 
 @router.delete("/{column_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_column(project_id: int, column_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await require_project_member(db, project_id, current_user.id)
+    await require_project_admin(db, project_id, current_user.id)
     result = await db.execute(
         select(BoardColumn).where(BoardColumn.id == column_id, BoardColumn.project_id == project_id)
     )

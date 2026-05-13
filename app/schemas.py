@@ -49,8 +49,10 @@ class ProjectOut(BaseModel):
 
 class MemberAdd(BaseModel):
     email: EmailStr
-    role: str = Field(default="MEMBER", pattern=r"^(ADMIN|MEMBER)$")
+    role: str = Field(default="MEMBER", pattern=r"^(ADMIN|MEMBER|VIEWER)$")
 
+class MemberRoleUpdate(BaseModel):
+    role: str = Field(pattern=r"^(ADMIN|MEMBER|VIEWER)$")
 
 class MemberOut(BaseModel):
     id: int

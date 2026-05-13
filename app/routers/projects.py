@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.deps import get_current_user, require_project_admin, require_project_member
+from app.deps import get_current_user, require_project_admin, require_project_member, require_project_owner
 from app.models import BoardColumn, Project, ProjectMember, User
-from app.schemas import MemberAdd, MemberOut, ProjectCreate, ProjectOut, ProjectUpdate
+from app.schemas import MemberAdd, MemberOut, ProjectCreate, ProjectOut, ProjectUpdate, MemberRoleUpdate
 from app.services.notifications import notify_project_members, notify_user
 from app.websocket_manager import manager
 
@@ -134,3 +134,116 @@ async def add_member(project_id: int, payload: MemberAdd, current_user: User = D
         exclude_user_ids={user.id},
     )
     return saved_member
+
+@router.patch("/{project_id}/members/{user_id}/role", response_model=MemberOut)
+async def update_member_role(
+    project_id: int,
+    user_id: int,
+    payload: MemberRoleUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_project_owner(db, project_id, current_user.id)
+
+    result = await db.execute(
+        select(ProjectMember)
+        .options(selectinload(ProjectMember.user))
+        .where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id,
+        )
+    )
+
+    member = result.scalar_one_or_none()
+
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if user_id == project.owner_id:
+        raise HTTPException(status_code=400, detail="Cannot change project owner's role")
+
+    old_role = member.role
+    member.role = payload.role
+
+    await db.commit()
+    await db.refresh(member)
+
+    await manager.broadcast(
+        project_id,
+        {
+            "event": "member.role_updated",
+            "data": {
+                "user_id": user_id,
+                "old_role": old_role,
+                "new_role": payload.role,
+            },
+        },
+    )
+
+    return member
+
+@router.delete("/{project_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member(
+    project_id: int,
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_project_owner(db, project_id, current_user.id)
+
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if user_id == project.owner_id:
+        raise HTTPException(status_code=400, detail="Cannot remove project owner")
+
+    result = await db.execute(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id,
+        )
+    )
+
+    member = result.scalar_one_or_none()
+
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    await db.delete(member)
+    await db.commit()
+
+    await manager.broadcast(
+        project_id,
+        {
+            "event": "member.removed",
+            "data": {
+                "user_id": user_id,
+            },
+        },
+    )
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_project_owner(db, project_id, current_user.id)
+
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    await db.delete(project)
+    await db.commit()

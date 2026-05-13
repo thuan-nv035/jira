@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user, require_project_member
+from app.deps import get_current_user, require_project_editor, require_project_member
 from app.models import Issue, IssueAttachment, User
 from app.schemas import AttachmentOut
 from app.services.notifications import notify_project_members
@@ -33,6 +33,20 @@ async def _get_issue_and_check_member(
     await require_project_member(db, issue.project_id, user_id)
     return issue
 
+async def _get_issue_and_check_editor(
+    db: AsyncSession,
+    issue_id: int,
+    user_id: int,
+) -> Issue:
+    result = await db.execute(select(Issue).where(Issue.id == issue_id))
+    issue = result.scalar_one_or_none()
+
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    await require_project_editor(db, issue.project_id, user_id)
+
+    return issue
 
 def _safe_filename(filename: str) -> str:
     return Path(filename).name.replace("/", "_").replace("\\", "_")
@@ -102,7 +116,7 @@ async def upload_attachment(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    issue = await _get_issue_and_check_member(db, issue_id, current_user.id)
+    issue = await _get_issue_and_check_editor(db, issue_id, current_user.id)
 
     attachment = await _save_upload_file(
         db=db,
@@ -265,7 +279,7 @@ async def delete_attachment(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    issue = await _get_issue_and_check_member(db, issue_id, current_user.id)
+    issue = await _get_issue_and_check_editor(db, issue_id, current_user.id)
 
     result = await db.execute(
         select(IssueAttachment).where(
