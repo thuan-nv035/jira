@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.activity_logs import create_activity_log
 from app.database import get_db
 from app.deps import get_current_user, require_project_member
-from app.models import BoardColumn, Issue, IssueAttachment, Project, ProjectMember, User
+from app.models import BoardColumn, ChecklistItem, Issue, IssueAttachment, Project, ProjectMember, User
 from app.schemas import IssueCreate, IssueMove, IssueOut, IssueUpdate
 from app.services.notifications import notify_project_members
 from app.websocket_manager import manager
@@ -39,8 +39,15 @@ async def _attach_attachment_count(db: AsyncSession, issue: Issue) -> Issue:
     return issue
 
 
-def _set_attachment_count(issue: Issue, count: int) -> Issue:
-    issue.attachment_count = count
+def _set_issue_counts(
+    issue: Issue,
+    attachment_count: int = 0,
+    checklist_total: int = 0,
+    checklist_done: int = 0,
+) -> Issue:
+    issue.attachment_count = attachment_count
+    issue.checklist_total = checklist_total
+    issue.checklist_done = checklist_done
     return issue
 
 def _issue_activity_snapshot(issue: Issue) -> dict:
@@ -71,6 +78,28 @@ def _get_changed_values(before: dict, after: dict) -> tuple[dict, dict]:
 
     return old_value, new_value
 
+async def _attach_issue_counts(db: AsyncSession, issue: Issue) -> Issue:
+    attachment_result = await db.execute(
+        select(func.count(IssueAttachment.id)).where(IssueAttachment.issue_id == issue.id)
+    )
+
+    checklist_result = await db.execute(
+        select(
+            func.count(ChecklistItem.id),
+            func.count(ChecklistItem.id).filter(ChecklistItem.is_done.is_(True)),
+        ).where(ChecklistItem.issue_id == issue.id)
+    )
+
+    attachment_count = attachment_result.scalar_one()
+    checklist_total, checklist_done = checklist_result.one()
+
+    issue.attachment_count = attachment_count
+    issue.checklist_total = checklist_total
+    issue.checklist_done = checklist_done
+
+    return issue
+
+
 @router.get("", response_model=list[IssueOut])
 async def list_issues(
     project_id: int,
@@ -89,12 +118,27 @@ async def list_issues(
         .subquery()
     )
 
+    checklist_count_subq = (
+        select(
+            ChecklistItem.issue_id.label("issue_id"),
+            func.count(ChecklistItem.id).label("checklist_total"),
+            func.count(ChecklistItem.id)
+            .filter(ChecklistItem.is_done.is_(True))
+            .label("checklist_done"),
+        )
+        .group_by(ChecklistItem.issue_id)
+        .subquery()
+    )
+
     query = (
         select(
             Issue,
             func.coalesce(attachment_count_subq.c.attachment_count, 0).label("attachment_count"),
+            func.coalesce(checklist_count_subq.c.checklist_total, 0).label("checklist_total"),
+            func.coalesce(checklist_count_subq.c.checklist_done, 0).label("checklist_done"),
         )
         .outerjoin(attachment_count_subq, attachment_count_subq.c.issue_id == Issue.id)
+        .outerjoin(checklist_count_subq, checklist_count_subq.c.issue_id == Issue.id)
         .where(Issue.project_id == project_id)
     )
 
@@ -110,8 +154,15 @@ async def list_issues(
     result = await db.execute(query)
 
     issues = []
-    for issue, attachment_count in result.all():
-        issues.append(_set_attachment_count(issue, attachment_count))
+    for issue, attachment_count, checklist_total, checklist_done in result.all():
+        issues.append(
+            _set_issue_counts(
+                issue,
+                attachment_count=attachment_count,
+                checklist_total=checklist_total,
+                checklist_done=checklist_done,
+            )
+        )
 
     return issues
 
@@ -186,6 +237,8 @@ async def create_issue(project_id: int, payload: IssueCreate, current_user: User
         issue_id=issue.id,
     )
     issue.attachment_count = 0
+    issue.checklist_total = 0
+    issue.checklist_done = 0
     return issue
 
 @router.get("/search", response_model=list[IssueOut])
@@ -219,12 +272,27 @@ async def search_issues(
         .subquery()
     )
 
+    checklist_count_subq = (
+        select(
+            ChecklistItem.issue_id.label("issue_id"),
+            func.count(ChecklistItem.id).label("checklist_total"),
+            func.count(ChecklistItem.id)
+            .filter(ChecklistItem.is_done.is_(True))
+            .label("checklist_done"),
+        )
+        .group_by(ChecklistItem.issue_id)
+        .subquery()
+    )
+
     query = (
         select(
             Issue,
             func.coalesce(attachment_count_subq.c.attachment_count, 0).label("attachment_count"),
+            func.coalesce(checklist_count_subq.c.checklist_total, 0).label("checklist_total"),
+            func.coalesce(checklist_count_subq.c.checklist_done, 0).label("checklist_done"),
         )
         .outerjoin(attachment_count_subq, attachment_count_subq.c.issue_id == Issue.id)
+        .outerjoin(checklist_count_subq, checklist_count_subq.c.issue_id == Issue.id)
         .where(Issue.project_id == project_id)
     )
 
@@ -298,9 +366,15 @@ async def search_issues(
 
     issues = []
 
-    for issue, attachment_count in result.all():
-        issue.attachment_count = attachment_count
-        issues.append(issue)
+    for issue, attachment_count, checklist_total, checklist_done in result.all():
+        issues.append(
+            _set_issue_counts(
+                issue,
+                attachment_count=attachment_count,
+                checklist_total=checklist_total,
+                checklist_done=checklist_done,
+            )
+        )
 
     return issues
 
@@ -311,7 +385,7 @@ async def get_issue(project_id: int, issue_id: int, current_user: User = Depends
     issue = result.scalar_one_or_none()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-    return await _attach_attachment_count(db, issue)
+    return await _attach_issue_counts(db, issue)
 
 
 @router.patch("/{issue_id}", response_model=IssueOut)
@@ -371,7 +445,7 @@ async def update_issue(project_id: int, issue_id: int, payload: IssueUpdate, cur
                 },
             },
         )
-    return await _attach_attachment_count(db, issue)
+    return await _attach_issue_counts(db, issue)
 
 
 @router.patch("/{issue_id}/move", response_model=IssueOut)
@@ -433,7 +507,7 @@ async def move_issue(project_id: int, issue_id: int, payload: IssueMove, current
             },
         },
     )
-    return await _attach_attachment_count(db, issue)
+    return await _attach_issue_counts(db, issue)
 
 
 @router.delete("/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)

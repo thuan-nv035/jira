@@ -107,6 +107,11 @@ class Issue(Base, TimestampMixin):
         nullable=True
     )
 
+    checklists: Mapped[list["ChecklistItem"]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan"
+    )
+
     @property
     def is_overdue(self) -> bool:
         if not self.due_date:
@@ -198,3 +203,26 @@ class ActivityLog(Base, TimestampMixin):
     project: Mapped["Project"] = relationship(back_populates="activity_logs")
     issue: Mapped[Optional["Issue"]] = relationship(back_populates="activity_logs")
     actor: Mapped[Optional["User"]] = relationship(back_populates="activity_logs")
+
+class ChecklistItem(Base, TimestampMixin):
+    __tablename__ = "checklist_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        index=True
+    )
+
+    creator_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
+    title: Mapped[str] = mapped_column(String(255))
+    is_done: Mapped[bool] = mapped_column(default=False)
+    position: Mapped[int] = mapped_column(default=0)
+
+    issue: Mapped["Issue"] = relationship(back_populates="checklists")
+    creator: Mapped[Optional["User"]] = relationship()

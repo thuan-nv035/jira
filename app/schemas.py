@@ -120,6 +120,8 @@ class IssueOut(BaseModel):
     updated_at: datetime
     due_date: Optional[datetime] = None
     is_overdue: bool = False
+    checklist_total: int = 0
+    checklist_done: int = 0
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -190,5 +192,28 @@ class ActivityLogOut(BaseModel):
 
     created_at: datetime
     actor: Optional[ActivityActorOut] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ChecklistCreate(BaseModel):
+    title: str
+    position: Optional[int] = None
+
+
+class ChecklistUpdate(BaseModel):
+    title: Optional[str] = None
+    is_done: Optional[bool] = None
+    position: Optional[int] = None
+
+
+class ChecklistOut(BaseModel):
+    id: int
+    issue_id: int
+    creator_id: Optional[int]
+    title: str
+    is_done: bool
+    position: int
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
