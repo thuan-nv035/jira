@@ -6,6 +6,7 @@ import {
   Paperclip,
   CalendarDays,
   AlertTriangle,
+  ListChecks,
 } from "lucide-vue-next";
 import { computed } from "vue";
 const props = defineProps({
@@ -19,6 +20,15 @@ const props = defineProps({
   },
 });
 const emit = defineEmits(["open", "dragstart"]);
+
+const checklistProgress = computed(() => {
+  const total = Number(props.issue.checklist_total || 0);
+  const done = Number(props.issue.checklist_done || 0);
+
+  if (total === 0) return 0;
+
+  return Math.round((done * 100) / total);
+});
 
 function priorityClass(priority) {
   return (
@@ -70,7 +80,7 @@ function normalizeMember(member) {
       id: member.user.id,
       full_name: member.user.full_name || member.user.email || "User",
       email: member.user.email || "",
-      avatar_url: member.user.avatar_url || ""
+      avatar_url: member.user.avatar_url || "",
     };
   }
 
@@ -78,7 +88,7 @@ function normalizeMember(member) {
     id: member.id || member.user_id,
     full_name: member.full_name || member.email || "User",
     email: member.email || "",
-    avatar_url: member.avatar_url || ""
+    avatar_url: member.avatar_url || "",
   };
 }
 
@@ -104,7 +114,7 @@ function getAvatarColor(name) {
     "bg-cyan-600",
     "bg-indigo-600",
     "bg-fuchsia-600",
-    "bg-slate-700"
+    "bg-slate-700",
   ];
 
   const text = name || "User";
@@ -145,6 +155,22 @@ function getAvatarColor(name) {
       {{ issue.description }}
     </p>
 
+    <div v-if="issue.checklist_total > 0" class="mt-3">
+      <div
+        class="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-400"
+      >
+        <span>Checklist</span>
+        <span>{{ checklistProgress }}%</span>
+      </div>
+
+      <div class="h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div
+          class="h-full rounded-full bg-slate-900 transition-all duration-300"
+          :style="{ width: `${checklistProgress}%` }"
+        ></div>
+      </div>
+    </div>
+
     <div
       class="mt-4 flex items-center justify-between border-t border-slate-100 pt-3"
     >
@@ -164,7 +190,14 @@ function getAvatarColor(name) {
           <Paperclip class="h-3.5 w-3.5" />
           {{ issue.attachment_count }}
         </div>
-
+        <div
+          v-if="issue.checklist_total > 0"
+          class="flex items-center gap-1 rounded-full border border-slate-100 bg-slate-50 px-2 py-1 text-xs font-black text-slate-600"
+          title="Checklist progress"
+        >
+          <ListChecks class="h-3.5 w-3.5" />
+          {{ issue.checklist_done }}/{{ issue.checklist_total }}
+        </div>
         <div
           v-if="issue.due_date"
           class="flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-black"

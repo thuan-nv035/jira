@@ -15,6 +15,11 @@ import {
   FileArchive,
   FileSpreadsheet,
   FileCode,
+  ListChecks,
+  Plus,
+  Check,
+  Pencil,
+  Circle,
 } from "lucide-vue-next";
 import ModalShell from "./ModalShell.vue";
 import {
@@ -22,6 +27,7 @@ import {
   commentApi,
   getErrorMessage,
   issueApi,
+  checklistApi,
 } from "../services/api";
 import { getUser } from "../utils/storage";
 
@@ -47,7 +53,12 @@ const uploadingAttachment = ref(false);
 const isDraggingFile = ref(false);
 const uploadProgress = ref(0);
 const uploadingFileNames = ref([]);
-
+const checklists = ref([]);
+const checklistLoading = ref(false);
+const checklistSaving = ref(false);
+const newChecklistTitle = ref("");
+const editingChecklistId = ref(null);
+const editingChecklistTitle = ref("");
 const form = reactive({
   title: props.issue.title,
   description: props.issue.description || "",
@@ -66,6 +77,109 @@ const assigneeName = computed(() => {
 
 async function loadComments() {
   comments.value = await commentApi.list(props.issue.id);
+}
+
+async function loadChecklists() {
+  checklistLoading.value = true;
+
+  try {
+    checklists.value = await checklistApi.list(props.issue.id);
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    checklistLoading.value = false;
+  }
+}
+
+async function createChecklist() {
+  const title = newChecklistTitle.value.trim();
+
+  if (!title) return;
+
+  checklistSaving.value = true;
+  error.value = "";
+
+  try {
+    await checklistApi.create(props.issue.id, {
+      title,
+    });
+
+    newChecklistTitle.value = "";
+    await loadChecklists();
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    checklistSaving.value = false;
+  }
+}
+
+async function toggleChecklist(item) {
+  try {
+    const nextValue = !item.is_done;
+
+    item.is_done = nextValue;
+
+    await checklistApi.update(item.id, {
+      is_done: nextValue,
+    });
+
+    await loadChecklists();
+  } catch (err) {
+    item.is_done = !item.is_done;
+    error.value = getErrorMessage(err);
+  }
+}
+
+function startEditChecklist(item) {
+  editingChecklistId.value = item.id;
+  editingChecklistTitle.value = item.title;
+}
+
+function cancelEditChecklist() {
+  editingChecklistId.value = null;
+  editingChecklistTitle.value = "";
+}
+
+async function saveEditChecklist(item) {
+  const title = editingChecklistTitle.value.trim();
+
+  if (!title) {
+    error.value = "Checklist title is required";
+    return;
+  }
+
+  try {
+    await checklistApi.update(item.id, {
+      title,
+    });
+
+    editingChecklistId.value = null;
+    editingChecklistTitle.value = "";
+    await loadChecklists();
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function deleteChecklist(item) {
+  if (!confirm(`Delete checklist "${item.title}"?`)) return;
+
+  try {
+    await checklistApi.remove(item.id);
+    checklists.value = checklists.value.filter(
+      (checklist) => checklist.id !== item.id,
+    );
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+function onChecklistRealtime(event) {
+  const issueId = Number(event.detail?.issue_id);
+
+  if (issueId === Number(props.issue.id)) {
+    loadChecklists();
+  }
 }
 
 async function saveIssue() {
@@ -331,13 +445,27 @@ function fromDatetimeLocal(value) {
   return new Date(value).toISOString();
 }
 
+const checklistTotal = computed(() => checklists.value.length);
+
+const checklistDone = computed(() => {
+  return checklists.value.filter((item) => item.is_done).length;
+});
+
+const checklistPercent = computed(() => {
+  if (checklistTotal.value === 0) return 0;
+  return Math.round((checklistDone.value * 100) / checklistTotal.value);
+});
+
 onMounted(async () => {
-  await Promise.all([loadComments(), loadAttachments()]);
+  await Promise.all([loadComments(), loadAttachments(), loadChecklists()]);
+
   window.addEventListener("jira-attachment-refresh", onAttachmentRealtime);
+  window.addEventListener("jira-checklist-refresh", onChecklistRealtime);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("jira-attachment-refresh", onAttachmentRealtime);
+  window.removeEventListener("jira-checklist-refresh", onChecklistRealtime);
 });
 </script>
 
@@ -380,6 +508,153 @@ onBeforeUnmount(() => {
             {{ deleting ? "Deleting..." : "Delete" }}
           </button>
         </div>
+
+        <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <ListChecks class="h-5 w-5 text-slate-500" />
+              <h3 class="font-black text-slate-950">Checklist</h3>
+            </div>
+
+            <span
+              v-if="checklistTotal > 0"
+              class="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 shadow-sm"
+            >
+              {{ checklistDone }}/{{ checklistTotal }}
+            </span>
+          </div>
+
+          <div v-if="checklistTotal > 0" class="mb-4">
+            <div
+              class="mb-2 flex items-center justify-between text-xs font-bold text-slate-500"
+            >
+              <span>Progress</span>
+              <span>{{ checklistPercent }}%</span>
+            </div>
+
+            <div class="h-2 overflow-hidden rounded-full bg-slate-200">
+              <div
+                class="h-full rounded-full bg-slate-900 transition-all duration-300"
+                :style="{ width: `${checklistPercent}%` }"
+              ></div>
+            </div>
+          </div>
+
+          <form class="mb-4 flex gap-2" @submit.prevent="createChecklist">
+            <input
+              v-model="newChecklistTitle"
+              type="text"
+              placeholder="Add checklist item..."
+              class="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400"
+            />
+
+            <button
+              type="submit"
+              class="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
+              :disabled="checklistSaving || !newChecklistTitle.trim()"
+            >
+              <Plus class="h-4 w-4" />
+            </button>
+          </form>
+
+          <div
+            v-if="checklistLoading"
+            class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+          >
+            Loading checklist...
+          </div>
+
+          <div v-else class="space-y-2">
+            <div
+              v-for="item in checklists"
+              :key="item.id"
+              class="rounded-2xl bg-white p-3 shadow-sm"
+            >
+              <div class="flex items-start gap-3">
+                <button
+                  type="button"
+                  class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition"
+                  :class="
+                    item.is_done
+                      ? 'border-emerald-500 bg-emerald-500 text-white'
+                      : 'border-slate-300 text-slate-400 hover:border-slate-500'
+                  "
+                  @click="toggleChecklist(item)"
+                >
+                  <Check v-if="item.is_done" class="h-4 w-4" />
+
+                  <Circle v-else class="h-3 w-3" />
+                </button>
+
+                <div class="min-w-0 flex-1">
+                  <div v-if="editingChecklistId === item.id" class="flex gap-2">
+                    <input
+                      v-model="editingChecklistTitle"
+                      type="text"
+                      class="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400"
+                      @keyup.enter="saveEditChecklist(item)"
+                      @keyup.esc="cancelEditChecklist"
+                    />
+
+                    <button
+                      type="button"
+                      class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"
+                      @click="saveEditChecklist(item)"
+                    >
+                      Save
+                    </button>
+
+                    <button
+                      type="button"
+                      class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-500"
+                      @click="cancelEditChecklist"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+
+                  <p
+                    v-else
+                    class="text-sm font-bold text-slate-800"
+                    :class="item.is_done ? 'text-slate-400 line-through' : ''"
+                  >
+                    {{ item.title }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="editingChecklistId !== item.id"
+                  class="flex shrink-0 items-center gap-1"
+                >
+                  <button
+                    type="button"
+                    class="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-900"
+                    title="Edit"
+                    @click="startEditChecklist(item)"
+                  >
+                    <Pencil class="h-4 w-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    class="rounded-xl p-2 text-rose-400 hover:bg-rose-50 hover:text-rose-600"
+                    title="Delete"
+                    @click="deleteChecklist(item)"
+                  >
+                    <Trash2 class="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p
+              v-if="checklists.length === 0"
+              class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+            >
+              No checklist items yet.
+            </p>
+          </div>
+        </section>
 
         <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div class="mb-4 flex items-center justify-between gap-3">

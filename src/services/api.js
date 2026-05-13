@@ -202,6 +202,27 @@ export const notificationApi = {
   },
 };
 
+export const checklistApi = {
+  async list(issueId) {
+    const { data } = await api.get(`/issues/${issueId}/checklists`);
+    return data;
+  },
+
+  async create(issueId, payload) {
+    const { data } = await api.post(`/issues/${issueId}/checklists`, payload);
+    return data;
+  },
+
+  async update(checklistId, payload) {
+    const { data } = await api.patch(`/checklists/${checklistId}`, payload);
+    return data;
+  },
+
+  async remove(checklistId) {
+    await api.delete(`/checklists/${checklistId}`);
+  }
+};
+
 export const attachmentApi = {
   async list(issueId) {
     const { data } = await api.get(`/issues/${issueId}/attachments`);

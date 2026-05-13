@@ -232,6 +232,19 @@ async function onDropIssue(column) {
 function onSocketMessage(payload) {
   lastEvent.value = payload;
 
+  if (
+    ["checklist.created", "checklist.updated", "checklist.deleted"].includes(
+      payload.event,
+    )
+  ) {
+    window.dispatchEvent(
+      new CustomEvent("jira-checklist-refresh", { detail: payload.data }),
+    );
+
+    refreshIssues({ silent: true });
+    return;
+  }
+
   if (payload.event === "activity.created") {
     loadProjectLogs({
       reset: true,
