@@ -35,6 +35,7 @@ const props = defineProps({
   projectId: { type: [String, Number], required: true },
   issue: { type: Object, required: true },
   members: { type: Array, default: () => [] },
+  canEdit: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["close", "changed", "deleted"]);
@@ -480,13 +481,14 @@ onBeforeUnmount(() => {
       <div class="space-y-4">
         <div>
           <label class="label">Title</label>
-          <input v-model="form.title" class="input text-base font-bold" />
+          <input v-model="form.title"  :disabled="!canEdit" class="input text-base font-bold" />
         </div>
 
         <div>
           <label class="label">Description</label>
           <textarea
             v-model="form.description"
+             :disabled="!canEdit"
             class="input min-h-44 resize-none"
           ></textarea>
         </div>
@@ -499,11 +501,11 @@ onBeforeUnmount(() => {
         </p>
 
         <div class="flex flex-wrap gap-3">
-          <button class="btn-primary" :disabled="loading" @click="saveIssue">
+          <button class="btn-primary" v-if="canEdit" :disabled="loading" @click="saveIssue">
             <Save class="h-4 w-4" />
             {{ loading ? "Saving..." : "Save changes" }}
           </button>
-          <button class="btn-danger" :disabled="deleting" @click="deleteIssue">
+          <button class="btn-danger" v-if="canEdit" :disabled="deleting" @click="deleteIssue">
             <Trash2 class="h-4 w-4" />
             {{ deleting ? "Deleting..." : "Delete" }}
           </button>
@@ -540,7 +542,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <form class="mb-4 flex gap-2" @submit.prevent="createChecklist">
+          <form v-if="canEdit" class="mb-4 flex gap-2" @submit.prevent="createChecklist">
             <input
               v-model="newChecklistTitle"
               type="text"
@@ -573,6 +575,7 @@ onBeforeUnmount(() => {
               <div class="flex items-start gap-3">
                 <button
                   type="button"
+                  :disabled="!canEdit"
                   class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition"
                   :class="
                     item.is_done
@@ -623,7 +626,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div
-                  v-if="editingChecklistId !== item.id"
+                  v-if="canEdit && editingChecklistId !== item.id"
                   class="flex shrink-0 items-center gap-1"
                 >
                   <button
@@ -675,6 +678,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="btn-secondary"
+                v-if="canEdit"
                 :disabled="uploadingAttachment"
                 @click="attachmentInput?.click()"
               >
@@ -685,6 +689,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div
+             v-if="canEdit"
             class="mb-4 rounded-2xl border-2 border-dashed p-6 text-center transition"
             :class="
               isDraggingFile
@@ -789,6 +794,7 @@ onBeforeUnmount(() => {
                 </button>
 
                 <button
+                  v-if="canEdit"
                   type="button"
                   class="rounded-xl border border-rose-200 p-2 text-rose-500 hover:bg-rose-50"
                   title="Delete"
@@ -814,7 +820,7 @@ onBeforeUnmount(() => {
             <h3 class="font-black text-slate-950">Comments</h3>
           </div>
 
-          <form class="mb-4 flex gap-2" @submit.prevent="addComment">
+          <form v-if="canEdit" class="mb-4 flex gap-2" @submit.prevent="addComment">
             <input
               v-model="commentText"
               class="input"
@@ -865,7 +871,7 @@ onBeforeUnmount(() => {
         </div>
         <div>
           <label class="label">Priority</label>
-          <select v-model="form.priority" class="input">
+          <select v-model="form.priority" :disabled="!canEdit" class="input">
             <option value="LOW">LOW</option>
             <option value="MEDIUM">MEDIUM</option>
             <option value="HIGH">HIGH</option>

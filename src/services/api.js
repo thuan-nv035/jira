@@ -85,6 +85,20 @@ export const projectApi = {
     const { data } = await api.post(`/projects/${projectId}/members`, payload);
     return data;
   },
+  async updateMemberRole(projectId, userId, role) {
+    const { data } = await api.patch(
+      `/projects/${projectId}/members/${userId}/role`,
+      {
+        role,
+      },
+    );
+
+    return data;
+  },
+
+  async removeMember(projectId, userId) {
+    await api.delete(`/projects/${projectId}/members/${userId}`);
+  },
 };
 
 export const columnApi = {
@@ -175,8 +189,8 @@ export const activityApi = {
       params: { limit, offset },
     });
     return data;
-  }
-}
+  },
+};
 
 export const notificationApi = {
   async list({ unreadOnly = false, limit = 30 } = {}) {
@@ -220,7 +234,7 @@ export const checklistApi = {
 
   async remove(checklistId) {
     await api.delete(`/checklists/${checklistId}`);
-  }
+  },
 };
 
 export const dashboardApi = {
@@ -230,27 +244,36 @@ export const dashboardApi = {
   },
 
   async issuesByStatus(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/dashboard/issues-by-status`);
+    const { data } = await api.get(
+      `/projects/${projectId}/dashboard/issues-by-status`,
+    );
     return data;
   },
 
   async issuesByPriority(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/dashboard/issues-by-priority`);
+    const { data } = await api.get(
+      `/projects/${projectId}/dashboard/issues-by-priority`,
+    );
     return data;
   },
 
   async issuesByAssignee(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/dashboard/issues-by-assignee`);
+    const { data } = await api.get(
+      `/projects/${projectId}/dashboard/issues-by-assignee`,
+    );
     return data;
   },
 
   async recentActivity(projectId, limit = 8) {
-    const { data } = await api.get(`/projects/${projectId}/dashboard/recent-activity`, {
-      params: { limit }
-    });
+    const { data } = await api.get(
+      `/projects/${projectId}/dashboard/recent-activity`,
+      {
+        params: { limit },
+      },
+    );
 
     return data;
-  }
+  },
 };
 
 export const attachmentApi = {
