@@ -223,6 +223,36 @@ export const checklistApi = {
   }
 };
 
+export const dashboardApi = {
+  async summary(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/dashboard/summary`);
+    return data;
+  },
+
+  async issuesByStatus(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/dashboard/issues-by-status`);
+    return data;
+  },
+
+  async issuesByPriority(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/dashboard/issues-by-priority`);
+    return data;
+  },
+
+  async issuesByAssignee(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/dashboard/issues-by-assignee`);
+    return data;
+  },
+
+  async recentActivity(projectId, limit = 8) {
+    const { data } = await api.get(`/projects/${projectId}/dashboard/recent-activity`, {
+      params: { limit }
+    });
+
+    return data;
+  }
+};
+
 export const attachmentApi = {
   async list(issueId) {
     const { data } = await api.get(`/issues/${issueId}/attachments`);

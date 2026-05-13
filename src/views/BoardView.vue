@@ -22,6 +22,7 @@ import AddMemberModal from "../components/AddMemberModal.vue";
 import BoardColumn from "../components/BoardColumn.vue";
 import IssueDetailModal from "../components/IssueDetailModal.vue";
 import IssueFormModal from "../components/IssueFormModal.vue";
+import ProjectDashboard from "../components/ProjectDashboard.vue";
 import {
   activityApi,
   columnApi,
@@ -231,6 +232,22 @@ async function onDropIssue(column) {
 
 function onSocketMessage(payload) {
   lastEvent.value = payload;
+
+  if (
+    [
+      "issue.created",
+      "issue.updated",
+      "issue.moved",
+      "issue.deleted",
+      "checklist.created",
+      "checklist.updated",
+      "checklist.deleted",
+      "activity.created",
+      "member.added",
+    ].includes(payload.event)
+  ) {
+    window.dispatchEvent(new CustomEvent("jira-dashboard-refresh"));
+  }
 
   if (
     ["checklist.created", "checklist.updated", "checklist.deleted"].includes(
@@ -659,6 +676,7 @@ onMounted(async () => {
     <section
       class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
     >
+      <ProjectDashboard :project-id="projectId" />
       <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
         <div>
           <label
