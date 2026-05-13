@@ -154,3 +154,14 @@ class NotificationOut(BaseModel):
 
 class UnreadCountOut(BaseModel):
     unread_count: int
+
+class AttachmentOut(BaseModel):
+    id: int
+    issue_id: int
+    uploader_id: Optional[int]
+    original_name: str
+    content_type: Optional[str]
+    size_bytes: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

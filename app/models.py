@@ -90,7 +90,10 @@ class Issue(Base, TimestampMixin):
     reporter: Mapped[Optional[User]] = relationship(foreign_keys=[reporter_id])
     assignee: Mapped[Optional[User]] = relationship(foreign_keys=[assignee_id])
     comments: Mapped[list["Comment"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
-
+    attachments: Mapped[list["IssueAttachment"]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan"
+    )
 
 class Comment(Base, TimestampMixin):
     __tablename__ = "comments"
@@ -122,3 +125,19 @@ class Notification(Base, TimestampMixin):
     actor: Mapped[Optional[User]] = relationship(foreign_keys=[actor_id])
     project: Mapped[Optional[Project]] = relationship()
     issue: Mapped[Optional[Issue]] = relationship()
+
+class IssueAttachment(Base, TimestampMixin):
+    __tablename__ = "issue_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    uploader_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    original_name: Mapped[str] = mapped_column(String(255))
+    stored_name: Mapped[str] = mapped_column(String(255), unique=True)
+    storage_path: Mapped[str] = mapped_column(String(500))
+    content_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(default=0)
+
+    issue: Mapped[Issue] = relationship(back_populates="attachments")
+    uploader: Mapped[Optional[User]] = relationship()
