@@ -217,3 +217,29 @@ class ChecklistOut(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class DashboardSummaryOut(BaseModel):
+    total_issues: int
+    done_issues: int
+    in_progress_issues: int
+    overdue_issues: int
+    unassigned_issues: int
+    total_members: int
+
+
+class DashboardStatusItemOut(BaseModel):
+    column_id: int
+    column_name: str
+    total: int
+
+
+class DashboardPriorityItemOut(BaseModel):
+    priority: str
+    total: int
+
+
+class DashboardAssigneeItemOut(BaseModel):
+    assignee_id: Optional[int]
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    total: int
