@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.services.activity_logs import create_activity_log
 from app.database import get_db
 from app.deps import get_current_user, require_project_member
-from app.models import BoardColumn, Issue, Project, ProjectMember, User
+from app.models import BoardColumn, Issue, IssueAttachment, Project, ProjectMember, User
 from app.schemas import IssueCreate, IssueMove, IssueOut, IssueUpdate
 from app.services.notifications import notify_project_members
 from app.websocket_manager import manager
-
+from datetime import datetime, timezone
 router = APIRouter(prefix="/projects/{project_id}/issues", tags=["Issues"])
 
 
@@ -31,6 +31,45 @@ async def _check_assignee(db: AsyncSession, project_id: int, assignee_id: int | 
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Assignee must be a project member")
 
+async def _attach_attachment_count(db: AsyncSession, issue: Issue) -> Issue:
+    count_result = await db.execute(
+        select(func.count(IssueAttachment.id)).where(IssueAttachment.issue_id == issue.id)
+    )
+    issue.attachment_count = count_result.scalar_one()
+    return issue
+
+
+def _set_attachment_count(issue: Issue, count: int) -> Issue:
+    issue.attachment_count = count
+    return issue
+
+def _issue_activity_snapshot(issue: Issue) -> dict:
+    return {
+        "id": issue.id,
+        "code": issue.code,
+        "title": issue.title,
+        "description": issue.description,
+        "issue_type": issue.issue_type,
+        "priority": issue.priority,
+        "column_id": issue.column_id,
+        "assignee_id": issue.assignee_id,
+        "position": issue.position,
+        "due_date": issue.due_date.isoformat() if issue.due_date else None,
+    }
+
+
+def _get_changed_values(before: dict, after: dict) -> tuple[dict, dict]:
+    old_value = {}
+    new_value = {}
+
+    for key, before_value in before.items():
+        after_value = after.get(key)
+
+        if before_value != after_value:
+            old_value[key] = before_value
+            new_value[key] = after_value
+
+    return old_value, new_value
 
 @router.get("", response_model=list[IssueOut])
 async def list_issues(
@@ -40,12 +79,41 @@ async def list_issues(
     db: AsyncSession = Depends(get_db),
 ):
     await require_project_member(db, project_id, current_user.id)
-    query = select(Issue).where(Issue.project_id == project_id)
+
+    attachment_count_subq = (
+        select(
+            IssueAttachment.issue_id.label("issue_id"),
+            func.count(IssueAttachment.id).label("attachment_count"),
+        )
+        .group_by(IssueAttachment.issue_id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Issue,
+            func.coalesce(attachment_count_subq.c.attachment_count, 0).label("attachment_count"),
+        )
+        .outerjoin(attachment_count_subq, attachment_count_subq.c.issue_id == Issue.id)
+        .where(Issue.project_id == project_id)
+    )
+
     if column_id is not None:
         query = query.where(Issue.column_id == column_id)
-    query = query.order_by(Issue.column_id.asc(), Issue.position.asc(), Issue.created_at.desc())
+
+    query = query.order_by(
+        Issue.column_id.asc(),
+        Issue.position.asc(),
+        Issue.created_at.desc(),
+    )
+
     result = await db.execute(query)
-    return result.scalars().all()
+
+    issues = []
+    for issue, attachment_count in result.all():
+        issues.append(_set_attachment_count(issue, attachment_count))
+
+    return issues
 
 
 @router.post("", response_model=IssueOut, status_code=status.HTTP_201_CREATED)
@@ -71,18 +139,42 @@ async def create_issue(project_id: int, payload: IssueCreate, current_user: User
     issue = Issue(
         project_id=project_id,
         column_id=payload.column_id,
-        reporter_id=current_user.id,
-        assignee_id=payload.assignee_id,
-        code=code,
         title=payload.title,
         description=payload.description,
         issue_type=payload.issue_type,
         priority=payload.priority,
+        assignee_id=payload.assignee_id,
+        due_date=payload.due_date,
+        reporter_id=current_user.id,
+        code=code,
         position=position,
     )
     db.add(issue)
     await db.commit()
     await db.refresh(issue)
+    await create_activity_log(
+        db,
+        project_id=issue.project_id,
+        issue_id=issue.id,
+        actor_id=current_user.id,
+        action="ISSUE_CREATED",
+        message=f"{current_user.full_name} created {issue.code}",
+        new_value=_issue_activity_snapshot(issue),
+    )
+
+    await db.commit()
+
+    await manager.broadcast(
+        issue.project_id,
+        {
+            "event": "activity.created",
+            "data": {
+                "issue_id": issue.id,
+                "action": "ISSUE_CREATED",
+                "message": f"{current_user.full_name} created {issue.code}",
+            },
+        },
+    )
     await manager.broadcast(project_id, {"event": "issue.created", "data": {"issue_id": issue.id, "code": issue.code}})
     await notify_project_members(
         db,
@@ -93,8 +185,124 @@ async def create_issue(project_id: int, payload: IssueCreate, current_user: User
         message=issue.title,
         issue_id=issue.id,
     )
+    issue.attachment_count = 0
     return issue
 
+@router.get("/search", response_model=list[IssueOut])
+async def search_issues(
+    project_id: int,
+    keyword: str | None = Query(default=None),
+    column_id: int | None = Query(default=None),
+    assignee_id: int | None = Query(default=None),
+    reporter_id: int | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    issue_type: str | None = Query(default=None),
+    has_attachment: bool | None = Query(default=None),
+    sort_by: str = Query(default="updated_at"),
+    order: str = Query(default="desc"),
+    overdue: bool | None = Query(default=None),
+    due_before: datetime | None = Query(default=None),
+    due_after: datetime | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_project_member(db, project_id, current_user.id)
+
+    attachment_count_subq = (
+        select(
+            IssueAttachment.issue_id.label("issue_id"),
+            func.count(IssueAttachment.id).label("attachment_count"),
+        )
+        .group_by(IssueAttachment.issue_id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Issue,
+            func.coalesce(attachment_count_subq.c.attachment_count, 0).label("attachment_count"),
+        )
+        .outerjoin(attachment_count_subq, attachment_count_subq.c.issue_id == Issue.id)
+        .where(Issue.project_id == project_id)
+    )
+
+    if keyword:
+        search_text = f"%{keyword.strip()}%"
+        query = query.where(
+            or_(
+                Issue.title.ilike(search_text),
+                Issue.description.ilike(search_text),
+                Issue.code.ilike(search_text),
+            )
+        )
+
+    if column_id is not None:
+        query = query.where(Issue.column_id == column_id)
+
+    if assignee_id is not None:
+        query = query.where(Issue.assignee_id == assignee_id)
+
+    if reporter_id is not None:
+        query = query.where(Issue.reporter_id == reporter_id)
+
+    if priority:
+        query = query.where(Issue.priority == priority.upper())
+
+    if issue_type:
+        query = query.where(Issue.issue_type == issue_type.upper())
+
+    if has_attachment is True:
+        query = query.where(func.coalesce(attachment_count_subq.c.attachment_count, 0) > 0)
+
+    if has_attachment is False:
+        query = query.where(func.coalesce(attachment_count_subq.c.attachment_count, 0) == 0)
+
+    if overdue is True:
+        query = query.where(Issue.due_date.is_not(None))
+        query = query.where(Issue.due_date < datetime.now(timezone.utc))
+
+    if overdue is False:
+        query = query.where(
+            or_(
+                Issue.due_date.is_(None),
+                Issue.due_date >= datetime.now(timezone.utc),
+            )
+        )
+
+    if due_before is not None:
+        query = query.where(Issue.due_date <= due_before)
+
+    if due_after is not None:
+        query = query.where(Issue.due_date >= due_after)
+
+    sort_columns = {
+        "created_at": Issue.created_at,
+        "updated_at": Issue.updated_at,
+        "priority": Issue.priority,
+        "title": Issue.title,
+        "position": Issue.position,
+    }
+
+    sort_column = sort_columns.get(sort_by, Issue.updated_at)
+
+    if order.lower() == "asc":
+        query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(sort_column.desc())
+
+    query = query.offset(offset).limit(limit)
+
+    result = await db.execute(query)
+
+    issues = []
+
+    for issue, attachment_count in result.all():
+        issue.attachment_count = attachment_count
+        issues.append(issue)
+
+    return issues
 
 @router.get("/{issue_id}", response_model=IssueOut)
 async def get_issue(project_id: int, issue_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -103,7 +311,7 @@ async def get_issue(project_id: int, issue_id: int, current_user: User = Depends
     issue = result.scalar_one_or_none()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-    return issue
+    return await _attach_attachment_count(db, issue)
 
 
 @router.patch("/{issue_id}", response_model=IssueOut)
@@ -113,7 +321,9 @@ async def update_issue(project_id: int, issue_id: int, payload: IssueUpdate, cur
     issue = result.scalar_one_or_none()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
+    await require_project_member(db, project_id, current_user.id)
 
+    before = _issue_activity_snapshot(issue)
     data = payload.model_dump(exclude_unset=True)
     if "assignee_id" in data:
         await _check_assignee(db, project_id, data["assignee_id"])
@@ -132,7 +342,36 @@ async def update_issue(project_id: int, issue_id: int, payload: IssueUpdate, cur
         message=issue.title,
         issue_id=issue.id,
     )
-    return issue
+
+    after = _issue_activity_snapshot(issue)
+    old_value, new_value = _get_changed_values(before, after)
+
+    if new_value:
+        await create_activity_log(
+            db,
+            project_id=issue.project_id,
+            issue_id=issue.id,
+            actor_id=current_user.id,
+            action="ISSUE_UPDATED",
+            message=f"{current_user.full_name} updated {issue.code}",
+            old_value=old_value,
+            new_value=new_value,
+        )
+
+        await db.commit()
+
+        await manager.broadcast(
+            issue.project_id,
+            {
+                "event": "activity.created",
+                "data": {
+                    "issue_id": issue.id,
+                    "action": "ISSUE_UPDATED",
+                    "message": f"{current_user.full_name} updated {issue.code}",
+                },
+            },
+        )
+    return await _attach_attachment_count(db, issue)
 
 
 @router.patch("/{issue_id}/move", response_model=IssueOut)
@@ -144,7 +383,10 @@ async def move_issue(project_id: int, issue_id: int, payload: IssueMove, current
     issue = result.scalar_one_or_none()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-
+    before_move = {
+        "column_id": issue.column_id,
+        "position": issue.position,
+    }
     issue.column_id = payload.column_id
     issue.position = payload.position
     await db.commit()
@@ -162,7 +404,36 @@ async def move_issue(project_id: int, issue_id: int, payload: IssueMove, current
         message=f"Moved to column #{issue.column_id}",
         issue_id=issue.id,
     )
-    return issue
+    after_move = {
+        "column_id": issue.column_id,
+        "position": issue.position,
+    }
+
+    await create_activity_log(
+        db,
+        project_id=issue.project_id,
+        issue_id=issue.id,
+        actor_id=current_user.id,
+        action="ISSUE_MOVED",
+        message=f"{current_user.full_name} moved {issue.code}",
+        old_value=before_move,
+        new_value=after_move,
+    )
+
+    await db.commit()
+
+    await manager.broadcast(
+        issue.project_id,
+        {
+            "event": "activity.created",
+            "data": {
+                "issue_id": issue.id,
+                "action": "ISSUE_MOVED",
+                "message": f"{current_user.full_name} moved {issue.code}",
+            },
+        },
+    )
+    return await _attach_attachment_count(db, issue)
 
 
 @router.delete("/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)

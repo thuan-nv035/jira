@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -20,7 +20,7 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(default=True)
-
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="actor")
     memberships: Mapped[list["ProjectMember"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     notifications: Mapped[list["Notification"]] = relationship(
         foreign_keys="Notification.recipient_id",
@@ -41,7 +41,10 @@ class Project(Base, TimestampMixin):
     columns: Mapped[list["BoardColumn"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     issues: Mapped[list["Issue"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     members: Mapped[list["ProjectMember"]] = relationship(back_populates="project", cascade="all, delete-orphan")
-
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan"
+    )
 
 class ProjectMember(Base, TimestampMixin):
     __tablename__ = "project_members"
@@ -94,6 +97,28 @@ class Issue(Base, TimestampMixin):
         back_populates="issue",
         cascade="all, delete-orphan"
     )
+    activity_logs: Mapped[list["ActivityLog"]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan"
+    )
+
+    due_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+    @property
+    def is_overdue(self) -> bool:
+        if not self.due_date:
+            return False
+
+        now = datetime.now(timezone.utc)
+        due = self.due_date
+
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+
+        return due < now
 
 class Comment(Base, TimestampMixin):
     __tablename__ = "comments"
@@ -141,3 +166,35 @@ class IssueAttachment(Base, TimestampMixin):
 
     issue: Mapped[Issue] = relationship(back_populates="attachments")
     uploader: Mapped[Optional[User]] = relationship()
+
+class ActivityLog(Base, TimestampMixin):
+    __tablename__ = "activity_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    issue_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    actor_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    message: Mapped[str] = mapped_column(Text)
+
+    old_value: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    project: Mapped["Project"] = relationship(back_populates="activity_logs")
+    issue: Mapped[Optional["Issue"]] = relationship(back_populates="activity_logs")
+    actor: Mapped[Optional["User"]] = relationship(back_populates="activity_logs")

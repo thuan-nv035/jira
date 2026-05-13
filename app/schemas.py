@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
@@ -88,7 +88,7 @@ class IssueCreate(BaseModel):
     assignee_id: Optional[int] = None
     issue_type: str = Field(default="TASK", pattern=r"^(TASK|BUG|STORY)$")
     priority: str = Field(default="MEDIUM", pattern=r"^(LOW|MEDIUM|HIGH|URGENT)$")
-
+    due_date: Optional[datetime] = None
 
 class IssueUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=2, max_length=255)
@@ -96,7 +96,7 @@ class IssueUpdate(BaseModel):
     assignee_id: Optional[int] = None
     issue_type: Optional[str] = Field(default=None, pattern=r"^(TASK|BUG|STORY)$")
     priority: Optional[str] = Field(default=None, pattern=r"^(LOW|MEDIUM|HIGH|URGENT)$")
-
+    due_date: Optional[datetime] = None
 
 class IssueMove(BaseModel):
     column_id: int
@@ -115,9 +115,11 @@ class IssueOut(BaseModel):
     issue_type: str
     priority: str
     position: int
+    attachment_count: int = 0
     created_at: datetime
     updated_at: datetime
-
+    due_date: Optional[datetime] = None
+    is_overdue: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -163,5 +165,30 @@ class AttachmentOut(BaseModel):
     content_type: Optional[str]
     size_bytes: int
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ActivityActorOut(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActivityLogOut(BaseModel):
+    id: int
+    project_id: int
+    issue_id: Optional[int]
+    actor_id: Optional[int]
+
+    action: str
+    message: str
+
+    old_value: Optional[dict[str, Any]] = None
+    new_value: Optional[dict[str, Any]] = None
+
+    created_at: datetime
+    actor: Optional[ActivityActorOut] = None
 
     model_config = ConfigDict(from_attributes=True)
