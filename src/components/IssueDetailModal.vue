@@ -8,6 +8,13 @@ import {
   Upload,
   Download,
   X,
+  Eye,
+  File as FileIcon,
+  Image,
+  FileText,
+  FileArchive,
+  FileSpreadsheet,
+  FileCode,
 } from "lucide-vue-next";
 import ModalShell from "./ModalShell.vue";
 import {
@@ -37,12 +44,17 @@ const attachments = ref([]);
 const attachmentInput = ref(null);
 const attachmentLoading = ref(false);
 const uploadingAttachment = ref(false);
+const isDraggingFile = ref(false);
+const uploadProgress = ref(0);
+const uploadingFileNames = ref([]);
+
 const form = reactive({
   title: props.issue.title,
   description: props.issue.description || "",
   issue_type: props.issue.issue_type,
   priority: props.issue.priority,
   assignee_id: props.issue.assignee_id || "",
+  due_date: toDatetimeLocal(props.issue.due_date),
 });
 
 const assigneeName = computed(() => {
@@ -60,13 +72,18 @@ async function saveIssue() {
   loading.value = true;
   error.value = "";
   try {
-    const updated = await issueApi.update(props.projectId, props.issue.id, {
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      issue_type: form.issue_type,
-      priority: form.priority,
-      assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
-    });
+    const updated = await issueApi.update(
+      props.issue.project_id,
+      props.issue.id,
+      {
+        title: form.title,
+        description: form.description,
+        issue_type: form.issue_type,
+        priority: form.priority,
+        assignee_id: form.assignee_id || null,
+        due_date: fromDatetimeLocal(form.due_date),
+      },
+    );
     emit("changed", updated);
   } catch (err) {
     error.value = getErrorMessage(err);
@@ -115,27 +132,97 @@ async function loadAttachments() {
   }
 }
 
-async function uploadAttachment(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
+async function uploadFiles(files) {
+  const selectedFiles = Array.from(files || []);
 
-  if (file.size > 10 * 1024 * 1024) {
-    error.value = "File size must be less than 10MB";
-    event.target.value = "";
+  if (selectedFiles.length === 0) return;
+
+  if (selectedFiles.length > 10) {
+    error.value = "You can upload up to 10 files at once";
+    return;
+  }
+
+  const oversizedFile = selectedFiles.find(
+    (file) => file.size > 10 * 1024 * 1024,
+  );
+
+  if (oversizedFile) {
+    error.value = `File "${oversizedFile.name}" must be less than 10MB`;
     return;
   }
 
   uploadingAttachment.value = true;
+  uploadProgress.value = 0;
+  uploadingFileNames.value = selectedFiles.map((file) => file.name);
   error.value = "";
 
   try {
-    await attachmentApi.upload(props.issue.id, file);
-    event.target.value = "";
+    const updateProgress = (percent) => {
+      uploadProgress.value = percent;
+    };
+
+    if (selectedFiles.length === 1) {
+      await attachmentApi.upload(
+        props.issue.id,
+        selectedFiles[0],
+        updateProgress,
+      );
+    } else {
+      await attachmentApi.uploadMany(
+        props.issue.id,
+        selectedFiles,
+        updateProgress,
+      );
+    }
+
+    uploadProgress.value = 100;
     await loadAttachments();
   } catch (err) {
     error.value = getErrorMessage(err);
   } finally {
-    uploadingAttachment.value = false;
+    setTimeout(() => {
+      uploadingAttachment.value = false;
+      uploadProgress.value = 0;
+      uploadingFileNames.value = [];
+    }, 600);
+  }
+}
+
+async function uploadAttachment(event) {
+  await uploadFiles(event.target.files);
+  event.target.value = "";
+}
+
+async function handleFileDrop(event) {
+  event.preventDefault();
+  isDraggingFile.value = false;
+
+  const files = event.dataTransfer?.files;
+  await uploadFiles(files);
+}
+
+function canPreview(attachment) {
+  const type = attachment.content_type || "";
+
+  return (
+    type.startsWith("image/") ||
+    type === "application/pdf" ||
+    type.startsWith("text/")
+  );
+}
+
+async function previewAttachment(attachment) {
+  try {
+    const blob = await attachmentApi.preview(props.issue.id, attachment.id);
+    const url = window.URL.createObjectURL(blob);
+
+    window.open(url, "_blank");
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 60 * 1000);
+  } catch (err) {
+    error.value = getErrorMessage(err);
   }
 }
 
@@ -177,11 +264,71 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function getAttachmentIcon(attachment) {
+  const type = attachment.content_type || "";
+  const name = attachment.original_name?.toLowerCase() || "";
+
+  if (type.startsWith("image/")) return Image;
+
+  if (type === "application/pdf") return FileText;
+
+  if (
+    type.includes("spreadsheet") ||
+    name.endsWith(".xls") ||
+    name.endsWith(".xlsx") ||
+    name.endsWith(".csv")
+  ) {
+    return FileSpreadsheet;
+  }
+
+  if (
+    type.includes("zip") ||
+    type.includes("rar") ||
+    type.includes("7z") ||
+    name.endsWith(".zip") ||
+    name.endsWith(".rar") ||
+    name.endsWith(".7z")
+  ) {
+    return FileArchive;
+  }
+
+  if (
+    name.endsWith(".js") ||
+    name.endsWith(".ts") ||
+    name.endsWith(".vue") ||
+    name.endsWith(".py") ||
+    name.endsWith(".html") ||
+    name.endsWith(".css") ||
+    name.endsWith(".json")
+  ) {
+    return FileCode;
+  }
+
+  return FileIcon;
+}
+
 function onAttachmentRealtime(event) {
   const issueId = Number(event.detail?.issue_id);
   if (issueId === Number(props.issue.id)) {
     loadAttachments();
   }
+}
+
+function toDatetimeLocal(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+
+  const localDate = new Date(date.getTime() - offset * 60 * 1000);
+
+  return localDate.toISOString().slice(0, 16);
+}
+
+function fromDatetimeLocal(value) {
+  if (!value) return null;
+
+  return new Date(value).toISOString();
 }
 
 onMounted(async () => {
@@ -245,6 +392,7 @@ onBeforeUnmount(() => {
               <input
                 ref="attachmentInput"
                 type="file"
+                multiple
                 class="hidden"
                 @change="uploadAttachment"
               />
@@ -256,8 +404,56 @@ onBeforeUnmount(() => {
                 @click="attachmentInput?.click()"
               >
                 <Upload class="h-4 w-4" />
-                {{ uploadingAttachment ? "Uploading..." : "Upload" }}
+                {{ uploadingAttachment ? "Uploading..." : "Upload files" }}
               </button>
+            </div>
+          </div>
+
+          <div
+            class="mb-4 rounded-2xl border-2 border-dashed p-6 text-center transition"
+            :class="
+              isDraggingFile
+                ? 'border-blue-400 bg-blue-50'
+                : 'border-slate-200 bg-white'
+            "
+            @dragover.prevent="isDraggingFile = true"
+            @dragleave.prevent="isDraggingFile = false"
+            @drop="handleFileDrop"
+          >
+            <Upload class="mx-auto mb-2 h-6 w-6 text-slate-400" />
+            <p class="text-sm font-bold text-slate-700">
+              Drag and drop files here
+            </p>
+            <p class="mt-1 text-xs text-slate-400">
+              Maximum 10 files, each file less than 10MB
+            </p>
+          </div>
+
+          <div
+            v-if="uploadingAttachment"
+            class="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-4"
+          >
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm font-black text-blue-900">
+                  Uploading {{ uploadingFileNames.length }} file(s)...
+                </p>
+
+                <p class="mt-1 truncate text-xs text-blue-700">
+                  {{ uploadingFileNames.join(", ") }}
+                </p>
+              </div>
+
+              <span class="text-sm font-black text-blue-700">
+                {{ uploadProgress }}%
+              </span>
+            </div>
+
+            <div class="h-2 overflow-hidden rounded-full bg-blue-100">
+              <div
+                class="h-full rounded-full bg-blue-600 transition-all duration-300"
+                :style="{ width: `${uploadProgress}%` }"
+              ></div>
             </div>
           </div>
 
@@ -274,21 +470,44 @@ onBeforeUnmount(() => {
               :key="attachment.id"
               class="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm"
             >
-              <div class="min-w-0">
-                <p class="truncate text-sm font-black text-slate-900">
-                  {{ attachment.original_name }}
-                </p>
-                <p class="mt-1 text-xs text-slate-400">
-                  {{ formatFileSize(attachment.size_bytes) }}
-                  ·
-                  {{ new Date(attachment.created_at).toLocaleString() }}
-                </p>
+              <div class="flex min-w-0 items-center gap-3">
+                <div
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"
+                >
+                  <component
+                    :is="getAttachmentIcon(attachment)"
+                    class="h-5 w-5"
+                  />
+                </div>
+
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-black text-slate-900">
+                    {{ attachment.original_name }}
+                  </p>
+
+                  <p class="mt-1 text-xs text-slate-400">
+                    {{ formatFileSize(attachment.size_bytes) }}
+                    ·
+                    {{ new Date(attachment.created_at).toLocaleString() }}
+                  </p>
+                </div>
               </div>
 
               <div class="flex shrink-0 items-center gap-2">
                 <button
+                  v-if="canPreview(attachment)"
                   type="button"
                   class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  title="Preview"
+                  @click="previewAttachment(attachment)"
+                >
+                  <Eye class="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  class="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  title="Download"
                   @click="downloadAttachment(attachment)"
                 >
                   <Download class="h-4 w-4" />
@@ -297,6 +516,7 @@ onBeforeUnmount(() => {
                 <button
                   type="button"
                   class="rounded-xl border border-rose-200 p-2 text-rose-500 hover:bg-rose-50"
+                  title="Delete"
                   @click="deleteAttachment(attachment)"
                 >
                   <X class="h-4 w-4" />
@@ -389,6 +609,24 @@ onBeforeUnmount(() => {
               {{ member.user.full_name }}
             </option>
           </select>
+        </div>
+        <div>
+          <label class="mb-2 block text-sm font-bold text-slate-600">
+            Due date
+          </label>
+
+          <input
+            v-model="form.due_date"
+            type="datetime-local"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400"
+          />
+
+          <p
+            v-if="props.issue.is_overdue"
+            class="mt-2 text-xs font-bold text-rose-600"
+          >
+            This task is overdue
+          </p>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
           <p><b>Reporter ID:</b> {{ issue.reporter_id || currentUser?.id }}</p>

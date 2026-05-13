@@ -1,13 +1,14 @@
 import axios from "axios";
 import { clearAuth, getToken, saveAuth } from "../utils/storage";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    "Content-Type": "application/json"
-  }
+    "Content-Type": "application/json",
+  },
 });
 
 api.interceptors.request.use((config) => {
@@ -25,7 +26,7 @@ api.interceptors.response.use(
       clearAuth();
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 function getErrorMessage(error) {
@@ -48,7 +49,7 @@ export const authApi = {
     form.append("password", password);
 
     const { data } = await api.post("/auth/login", form, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
     saveAuth(data.access_token, data.user);
     return data;
@@ -56,7 +57,7 @@ export const authApi = {
   async me() {
     const { data } = await api.get("/auth/me");
     return data;
-  }
+  },
 };
 
 export const projectApi = {
@@ -83,7 +84,7 @@ export const projectApi = {
   async addMember(projectId, payload) {
     const { data } = await api.post(`/projects/${projectId}/members`, payload);
     return data;
-  }
+  },
 };
 
 export const columnApi = {
@@ -96,12 +97,15 @@ export const columnApi = {
     return data;
   },
   async update(projectId, columnId, payload) {
-    const { data } = await api.patch(`/projects/${projectId}/columns/${columnId}`, payload);
+    const { data } = await api.patch(
+      `/projects/${projectId}/columns/${columnId}`,
+      payload,
+    );
     return data;
   },
   async remove(projectId, columnId) {
     await api.delete(`/projects/${projectId}/columns/${columnId}`);
-  }
+  },
 };
 
 export const issueApi = {
@@ -114,16 +118,37 @@ export const issueApi = {
     return data;
   },
   async update(projectId, issueId, payload) {
-    const { data } = await api.patch(`/projects/${projectId}/issues/${issueId}`, payload);
+    const { data } = await api.patch(
+      `/projects/${projectId}/issues/${issueId}`,
+      payload,
+    );
     return data;
   },
   async move(projectId, issueId, payload) {
-    const { data } = await api.patch(`/projects/${projectId}/issues/${issueId}/move`, payload);
+    const { data } = await api.patch(
+      `/projects/${projectId}/issues/${issueId}/move`,
+      payload,
+    );
+    return data;
+  },
+  async search(projectId, params = {}) {
+    const cleanParams = {};
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== "" && value !== null && value !== undefined) {
+        cleanParams[key] = value;
+      }
+    });
+
+    const { data } = await api.get(`/projects/${projectId}/issues/search`, {
+      params: cleanParams,
+    });
+
     return data;
   },
   async remove(projectId, issueId) {
     await api.delete(`/projects/${projectId}/issues/${issueId}`);
-  }
+  },
 };
 
 export const commentApi = {
@@ -134,13 +159,29 @@ export const commentApi = {
   async create(issueId, payload) {
     const { data } = await api.post(`/issues/${issueId}/comments`, payload);
     return data;
-  }
+  },
 };
+
+export const activityApi = {
+  async listProjectLog(projectId, { limit = 50, offset = 0 } = {}) {
+    const { data } = await api.get(`/projects/${projectId}/activity-logs`, {
+      params: { limit, offset },
+    });
+    return data;
+  },
+
+  async listIssueLog(issueId, { limit = 50, offset = 0 } = {}) {
+    const { data } = await api.get(`/issues/${issueId}/activity-logs`, {
+      params: { limit, offset },
+    });
+    return data;
+  }
+}
 
 export const notificationApi = {
   async list({ unreadOnly = false, limit = 30 } = {}) {
     const { data } = await api.get("/notifications", {
-      params: { unread_only: unreadOnly, limit }
+      params: { unread_only: unreadOnly, limit },
     });
     return data;
   },
@@ -158,7 +199,7 @@ export const notificationApi = {
   },
   async remove(notificationId) {
     await api.delete(`/notifications/${notificationId}`);
-  }
+  },
 };
 
 export const attachmentApi = {
@@ -167,30 +208,84 @@ export const attachmentApi = {
     return data;
   },
 
-  async upload(issueId, file) {
+  async upload(issueId, file, onProgress) {
     const formData = new FormData();
     formData.append("file", file);
 
-    const { data } = await api.post(`/issues/${issueId}/attachments`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    });
+    const { data } = await api.post(
+      `/issues/${issueId}/attachments`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        onUploadProgress: (progressEvent) => {
+          if (!progressEvent.total || !onProgress) return;
+
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total,
+          );
+          onProgress(percent);
+        },
+      },
+    );
 
     return data;
   },
 
-  async download(issueId, attachmentId) {
-    const response = await api.get(`/issues/${issueId}/attachments/${attachmentId}/download`, {
-      responseType: "blob"
+  async uploadMany(issueId, files, onProgress) {
+    const formData = new FormData();
+
+    Array.from(files).forEach((file) => {
+      formData.append("files", file);
     });
+
+    const { data } = await api.post(
+      `/issues/${issueId}/attachments/bulk`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        onUploadProgress: (progressEvent) => {
+          if (!progressEvent.total || !onProgress) return;
+
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total,
+          );
+          onProgress(percent);
+        },
+      },
+    );
+
+    return data;
+  },
+
+  async preview(issueId, attachmentId) {
+    const response = await api.get(
+      `/issues/${issueId}/attachments/${attachmentId}/view`,
+      {
+        responseType: "blob",
+      },
+    );
+
+    return response.data;
+  },
+
+  async download(issueId, attachmentId) {
+    const response = await api.get(
+      `/issues/${issueId}/attachments/${attachmentId}/download`,
+      {
+        responseType: "blob",
+      },
+    );
 
     return response.data;
   },
 
   async remove(issueId, attachmentId) {
     await api.delete(`/issues/${issueId}/attachments/${attachmentId}`);
-  }
+  },
 };
 
 export { api, getErrorMessage };

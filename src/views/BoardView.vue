@@ -1,5 +1,12 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ArrowLeft,
@@ -8,6 +15,7 @@ import {
   UserPlus,
   Wifi,
   WifiOff,
+  Activity,
 } from "lucide-vue-next";
 import AppLayout from "../components/AppLayout.vue";
 import AddMemberModal from "../components/AddMemberModal.vue";
@@ -15,6 +23,7 @@ import BoardColumn from "../components/BoardColumn.vue";
 import IssueDetailModal from "../components/IssueDetailModal.vue";
 import IssueFormModal from "../components/IssueFormModal.vue";
 import {
+  activityApi,
   columnApi,
   getErrorMessage,
   issueApi,
@@ -41,6 +50,26 @@ const selectedIssue = ref(null);
 const showAddMember = ref(false);
 const draggedIssue = ref(null);
 let socket = null;
+const projectLogs = ref([]);
+const projectLogLoading = ref(false);
+const projectLogLoadingMore = ref(false);
+const projectLogHasMore = ref(true);
+const PROJECT_LOG_LIMIT = 20;
+
+const filterLoading = ref(false);
+
+const filters = reactive({
+  keyword: "",
+  column_id: "",
+  priority: "",
+  issue_type: "",
+  has_attachment: "",
+  overdue: "",
+  sort_by: "updated_at",
+  order: "desc",
+});
+
+let filterTimer = null;
 
 const issueTotal = computed(() => issues.value.length);
 const doneTotal = computed(() => {
@@ -56,19 +85,23 @@ function issuesByColumn(columnId) {
   return issues.value.filter((issue) => issue.column_id === columnId);
 }
 
-async function loadBoard() {
-  loading.value = true;
-  error.value = "";
+async function loadBoard(options = {}) {
+  const silent = options?.silent ?? false;
+  if (!silent) {
+    loading.value = true;
+    error.value = "";
+  }
   try {
-    const [projectData, columnData, issueData, memberData] = await Promise.all([
+    const [projectData, columnData, memberData] = await Promise.all([
       projectApi.get(projectId.value),
       columnApi.list(projectId.value),
-      issueApi.list(projectId.value),
+      // issueApi.list(projectId.value),
       projectApi.members(projectId.value),
     ]);
     project.value = projectData;
     columns.value = columnData;
-    issues.value = issueData;
+    await refreshIssues({ silent: true });
+    // issues.value = issueData;
     members.value = memberData;
   } catch (err) {
     error.value = getErrorMessage(err);
@@ -132,35 +165,56 @@ async function onDropIssue(column) {
 
 function onSocketMessage(payload) {
   lastEvent.value = payload;
+
+  if (payload.event === "activity.created") {
+    loadProjectLogs({
+      reset: true,
+      silent: true,
+    });
+  }
+
   if (payload.event === "notification.created") {
     window.dispatchEvent(
       new CustomEvent("jira-notification-refresh", { detail: payload.data }),
     );
   }
 
+  if (["attachment.uploaded", "attachment.deleted"].includes(payload.event)) {
+    window.dispatchEvent(
+      new CustomEvent("jira-attachment-refresh", { detail: payload.data }),
+    );
+  }
+
+  if (payload.event === "issue.moved") {
+    applyIssueMovedLocal(payload.data);
+    return;
+  }
+
   if (
     [
       "issue.created",
       "issue.updated",
-      "issue.moved",
       "issue.deleted",
       "comment.created",
+      "attachment.uploaded",
+      "attachment.deleted",
+      "activity.created",
+    ].includes(payload.event)
+  ) {
+    refreshIssues({ silent: true });
+    return;
+  }
+
+  if (
+    [
       "column.created",
       "column.updated",
       "column.deleted",
       "member.added",
       "notification.created",
-      "attachment.uploaded",
-      "attachment.deleted",
     ].includes(payload.event)
   ) {
-    loadBoard();
-  }
-
-  if (["attachment.uploaded", "attachment.deleted"].includes(payload.event)) {
-    window.dispatchEvent(
-      new CustomEvent("jira-attachment-refresh", { detail: payload.data }),
-    );
+    loadBoard({ silent: true });
   }
 }
 
@@ -169,15 +223,219 @@ function onMemberAdded(member) {
   members.value = [...members.value, member];
 }
 
+onBeforeUnmount(() => {
+  clearTimeout(filterTimer);
+  socket?.close();
+});
+
+function applyIssueMovedLocal(data) {
+  const issueId = Number(data.issue_id);
+  const newColumnId = Number(data.column_id);
+  const newPosition = Number(data.position ?? 0);
+
+  const index = issues.value.findIndex((issue) => Number(issue.id) === issueId);
+
+  if (index === -1) {
+    loadBoard({ silent: true });
+    return;
+  }
+
+  issues.value[index] = {
+    ...issues.value[index],
+    column_id: newColumnId,
+    position: newPosition,
+  };
+
+  issues.value = [...issues.value].sort((a, b) => {
+    if (a.column_id !== b.column_id) {
+      return a.column_id - b.column_id;
+    }
+
+    return a.position - b.position;
+  });
+}
+
+const hasActiveIssueFilters = computed(() => {
+  return Boolean(
+    filters.keyword ||
+    filters.column_id ||
+    filters.priority ||
+    filters.issue_type ||
+    filters.overdue ||
+    filters.has_attachment,
+  );
+});
+
+function buildIssueSearchParams() {
+  const params = {
+    keyword: filters.keyword.trim(),
+    column_id: filters.column_id ? Number(filters.column_id) : "",
+    priority: filters.priority,
+    issue_type: filters.issue_type,
+    has_attachment:
+      filters.has_attachment === "" ? "" : filters.has_attachment === "true",
+    sort_by: filters.sort_by,
+    order: filters.order,
+    overdue: filters.overdue === "" ? "" : filters.overdue === "true",
+  };
+
+  return params;
+}
+
+async function refreshIssues(options = {}) {
+  const silent = options.silent ?? false;
+
+  if (!projectId.value) return;
+
+  if (!silent) {
+    filterLoading.value = true;
+  }
+
+  try {
+    if (hasActiveIssueFilters.value) {
+      issues.value = await issueApi.search(
+        projectId.value,
+        buildIssueSearchParams(),
+      );
+    } else {
+      issues.value = await issueApi.list(projectId.value);
+    }
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    if (!silent) {
+      filterLoading.value = false;
+    }
+  }
+}
+
+watch(
+  filters,
+  () => {
+    clearTimeout(filterTimer);
+
+    filterTimer = setTimeout(() => {
+      refreshIssues({ silent: false });
+    }, 350);
+  },
+  { deep: true },
+);
+
+function clearIssueFilters() {
+  filters.keyword = "";
+  filters.column_id = "";
+  filters.priority = "";
+  filters.issue_type = "";
+  filters.has_attachment = "";
+  filters.sort_by = "updated_at";
+  filters.order = "desc";
+  filters.overdue = "";
+}
+
+async function loadProjectLogs(options = {}) {
+  const reset = options.reset ?? false;
+  const silent = options.silent ?? false;
+
+  if (!projectId.value) return;
+
+  if (projectLogLoading.value || projectLogLoadingMore.value) return;
+
+  if (!reset && !projectLogHasMore.value) return;
+
+  const offset = reset ? 0 : projectLogs.value.length;
+
+  if (reset) {
+    projectLogHasMore.value = true;
+
+    if (!silent) {
+      projectLogLoading.value = true;
+    }
+  } else {
+    projectLogLoadingMore.value = true;
+  }
+
+  try {
+    const data = await activityApi.listProjectLog(projectId.value, {
+      limit: PROJECT_LOG_LIMIT,
+      offset,
+    });
+
+    if (reset) {
+      projectLogs.value = data;
+    } else {
+      const currentIds = new Set(projectLogs.value.map((item) => item.id));
+      const newItems = data.filter((item) => !currentIds.has(item.id));
+
+      projectLogs.value = [...projectLogs.value, ...newItems];
+    }
+
+    projectLogHasMore.value = data.length === PROJECT_LOG_LIMIT;
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    projectLogLoading.value = false;
+    projectLogLoadingMore.value = false;
+  }
+}
+
+function formatLogTime(dateString) {
+  if (!dateString) return "";
+
+  return new Date(dateString).toLocaleString();
+}
+
+function getActivityLabel(action) {
+  const labels = {
+    ISSUE_CREATED: "Created issue",
+    ISSUE_UPDATED: "Updated issue",
+    ISSUE_MOVED: "Moved issue",
+  };
+
+  return labels[action] || action;
+}
+
+function getActivityClass(action) {
+  const classes = {
+    ISSUE_CREATED: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    ISSUE_UPDATED: "bg-blue-50 text-blue-700 border-blue-100",
+    ISSUE_MOVED: "bg-amber-50 text-amber-700 border-amber-100",
+  };
+
+  return classes[action] || "bg-slate-50 text-slate-700 border-slate-100";
+}
+
+function getChangedFields(log) {
+  if (!log?.new_value) return "";
+
+  const fields = Object.keys(log.new_value);
+
+  if (fields.length === 0) return "";
+
+  return fields.join(", ");
+}
+
+function onProjectLogScroll(event) {
+  const el = event.target;
+
+  const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+
+  if (nearBottom) {
+    loadProjectLogs({
+      reset: false,
+      silent: true,
+    });
+  }
+}
+
 onMounted(async () => {
   await loadBoard();
+  await loadProjectLogs({
+    reset: true,
+    silent: true,
+  });
   socket = createProjectSocket(projectId.value, onSocketMessage, (status) => {
     socketStatus.value = status;
   });
-});
-
-onBeforeUnmount(() => {
-  socket?.close();
 });
 </script>
 
@@ -263,6 +521,170 @@ onBeforeUnmount(() => {
       {{ error }}
     </p>
 
+    <section
+      class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
+    >
+      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+        <div class="xl:col-span-2">
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Search
+          </label>
+
+          <input
+            v-model="filters.keyword"
+            type="text"
+            placeholder="Search title, code, description..."
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          />
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Status
+          </label>
+
+          <select
+            v-model="filters.column_id"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="">All columns</option>
+            <option
+              v-for="column in columns"
+              :key="column.id"
+              :value="column.id"
+            >
+              {{ column.name }}
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Priority
+          </label>
+
+          <select
+            v-model="filters.priority"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="">All priorities</option>
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="URGENT">Urgent</option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Type
+          </label>
+
+          <select
+            v-model="filters.issue_type"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="">All types</option>
+            <option value="TASK">Task</option>
+            <option value="BUG">Bug</option>
+            <option value="STORY">Story</option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Attachment
+          </label>
+
+          <select
+            v-model="filters.has_attachment"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="">All</option>
+            <option value="true">Has files</option>
+            <option value="false">No files</option>
+          </select>
+        </div>
+
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Sort
+          </label>
+
+          <select
+            v-model="filters.sort_by"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="updated_at">Updated</option>
+            <option value="created_at">Created</option>
+            <option value="priority">Priority</option>
+            <option value="title">Title</option>
+            <option value="position">Position</option>
+          </select>
+        </div>
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Deadline
+          </label>
+
+          <select
+            v-model="filters.overdue"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="">All</option>
+            <option value="true">Overdue</option>
+            <option value="false">Not overdue</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3 text-sm text-slate-500">
+          <span v-if="filterLoading" class="font-semibold text-blue-600">
+            Filtering...
+          </span>
+
+          <span v-else>
+            Showing
+            <b class="text-slate-900">{{ issues.length }}</b>
+            issue(s)
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <select
+            v-model="filters.order"
+            class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+
+          <button
+            type="button"
+            class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-100"
+            @click="clearIssueFilters"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    </section>
+
     <div v-if="loading" class="flex gap-4 overflow-x-auto pb-5">
       <div
         v-for="i in 4"
@@ -295,6 +717,116 @@ onBeforeUnmount(() => {
       </p>
       <p class="mt-1 text-sm font-bold text-slate-900">{{ lastEvent.event }}</p>
     </div>
+
+    <section
+      class="mb-6 rounded-3xl mt-10 border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div class="mb-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div
+            class="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white"
+          >
+            <Activity class="h-5 w-5" />
+          </div>
+
+          <div>
+            <h2 class="text-base font-black text-slate-950">
+              Project Activity
+            </h2>
+            <p class="text-sm text-slate-500">Recent changes in this project</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-100"
+          :disabled="projectLogLoading"
+          @click="loadProjectLogs({ reset: true })"
+        >
+          <RefreshCcw class="mr-2 inline h-4 w-4" />
+          Refresh
+        </button>
+      </div>
+
+      <div
+        v-if="projectLogLoading"
+        class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+      >
+        Loading activity logs...
+      </div>
+
+      <div
+        v-else-if="projectLogs.length === 0"
+        class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+      >
+        No activity yet.
+      </div>
+
+      <div
+        v-else
+        class="max-h-80 space-y-3 overflow-y-auto pr-1"
+        @scroll="onProjectLogScroll"
+      >
+        <div
+          v-for="log in projectLogs"
+          :key="log.id"
+          class="rounded-2xl border border-slate-100 bg-slate-50 p-4"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="mb-2 flex flex-wrap items-center gap-2">
+                <span
+                  class="rounded-full border px-3 py-1 text-xs font-black"
+                  :class="getActivityClass(log.action)"
+                >
+                  {{ getActivityLabel(log.action) }}
+                </span>
+
+                <span class="text-xs font-semibold text-slate-400">
+                  {{ formatLogTime(log.created_at) }}
+                </span>
+              </div>
+
+              <p class="text-sm font-bold text-slate-900">
+                {{ log.message }}
+              </p>
+
+              <p
+                v-if="getChangedFields(log)"
+                class="mt-1 text-xs font-semibold text-slate-500"
+              >
+                Changed:
+                <span class="text-slate-700">
+                  {{ getChangedFields(log) }}
+                </span>
+              </p>
+            </div>
+
+            <div
+              v-if="log.actor"
+              class="shrink-0 rounded-2xl bg-white px-3 py-2 text-right shadow-sm"
+            >
+              <p class="text-xs font-black text-slate-900">
+                {{ log.actor.full_name }}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="projectLogLoadingMore"
+          class="rounded-2xl bg-slate-50 p-4 text-center text-sm font-semibold text-slate-500"
+        >
+          Loading more activity...
+        </div>
+
+        <div
+          v-else-if="!projectLogHasMore && projectLogs.length > 0"
+          class="rounded-2xl bg-slate-50 p-4 text-center text-xs font-bold uppercase tracking-wide text-slate-400"
+        >
+          No more activity logs
+        </div>
+      </div>
+    </section>
 
     <IssueFormModal
       v-if="showIssueForm && selectedColumn"

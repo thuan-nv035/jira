@@ -10,7 +10,7 @@ const error = ref("");
 const form = reactive({
   full_name: "Admin User",
   email: "admin@gmail.com",
-  password: "123456"
+  password: "123456",
 });
 
 async function submit() {
@@ -30,12 +30,20 @@ async function submit() {
 <template>
   <div class="flex min-h-screen items-center justify-center bg-slate-950 p-4">
     <div class="w-full max-w-md rounded-[2rem] bg-white p-8 shadow-soft">
-      <div class="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
+      <div
+        class="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white"
+      >
         <KanbanSquare class="h-7 w-7" />
       </div>
-      <p class="text-sm font-black uppercase tracking-[0.2em] text-blue-600">Create account</p>
-      <h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950">Start your workspace</h1>
-      <p class="mt-2 text-sm text-slate-500">Tạo tài khoản để dùng API Jira clone.</p>
+      <p class="text-sm font-black uppercase tracking-[0.2em] text-blue-600">
+        Create account
+      </p>
+      <h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950">
+        Start your workspace
+      </h1>
+      <p class="mt-2 text-sm text-slate-500">
+        Tạo tài khoản để dùng API Jira clone.
+      </p>
 
       <form class="mt-8 space-y-4" @submit.prevent="submit">
         <div>
@@ -48,15 +56,30 @@ async function submit() {
         </div>
         <div>
           <label class="label">Password</label>
-          <input v-model="form.password" type="password" class="input" minlength="6" required />
+          <input
+            v-model="form.password"
+            type="password"
+            class="input"
+            minlength="6"
+            required
+          />
         </div>
-        <p v-if="error" class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{{ error }}</p>
-        <button class="btn-primary w-full" :disabled="loading">{{ loading ? 'Creating...' : 'Register' }}</button>
+        <p
+          v-if="error"
+          class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700"
+        >
+          {{ error }}
+        </p>
+        <button class="btn-primary w-full" :disabled="loading">
+          {{ loading ? "Creating..." : "Register" }}
+        </button>
       </form>
 
       <p class="mt-6 text-center text-sm text-slate-500">
         Already have account?
-        <RouterLink class="font-bold text-slate-950 hover:underline" to="/login">Login</RouterLink>
+        <RouterLink class="font-bold text-slate-950 hover:underline" to="/login"
+          >Login</RouterLink
+        >
       </p>
     </div>
   </div>

@@ -18,7 +18,8 @@ const form = reactive({
   description: "",
   issue_type: "TASK",
   priority: "MEDIUM",
-  assignee_id: ""
+  assignee_id: "",
+  due_date: null
 });
 
 const title = computed(() => `Create issue${props.column ? ` in ${props.column.name}` : ''}`);
@@ -31,6 +32,12 @@ watch(
   { immediate: true }
 );
 
+function fromDatetimeLocal(value) {
+  if (!value) return null;
+
+  return new Date(value).toISOString();
+}
+
 async function submit() {
   if (!props.column) return;
   loading.value = true;
@@ -42,7 +49,8 @@ async function submit() {
       description: form.description.trim() || null,
       issue_type: form.issue_type,
       priority: form.priority,
-      assignee_id: form.assignee_id ? Number(form.assignee_id) : null
+      assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
+      due_date: fromDatetimeLocal(form.due_date),
     });
     emit("created", issue);
   } catch (err) {
@@ -94,6 +102,18 @@ async function submit() {
             {{ member.user.full_name }} - {{ member.user.email }}
           </option>
         </select>
+      </div>
+
+      <div>
+        <label class="mb-2 block text-sm font-bold text-slate-600">
+            Due date
+          </label>
+
+          <input
+            v-model="form.due_date"
+            type="datetime-local"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400"
+          />
       </div>
 
       <p v-if="error" class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{{ error }}</p>
