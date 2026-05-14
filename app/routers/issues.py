@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from app.services.activity_logs import create_activity_log
 from app.database import get_db
 from app.deps import get_current_user, require_project_editor, require_project_member
-from app.models import BoardColumn, ChecklistItem, Issue, IssueAttachment, Project, ProjectMember, User
+from app.models import BoardColumn, ChecklistItem, Issue, IssueAttachment, Project, ProjectMember, User, issue_labels_table
 from app.schemas import IssueCreate, IssueMove, IssueOut, IssueUpdate
 from app.services.notifications import notify_project_members
 from app.websocket_manager import manager
@@ -273,6 +273,7 @@ async def search_issues(
     overdue: bool | None = Query(default=None),
     due_before: datetime | None = Query(default=None),
     due_after: datetime | None = Query(default=None),
+    label_id: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -344,6 +345,14 @@ async def search_issues(
 
     if has_attachment is False:
         query = query.where(func.coalesce(attachment_count_subq.c.attachment_count, 0) == 0)
+
+    if label_id is not None:
+        query = query.join(
+            issue_labels_table,
+            issue_labels_table.c.issue_id == Issue.id,
+        ).where(
+            issue_labels_table.c.label_id == label_id
+        )
 
     if overdue is True:
         query = query.where(Issue.due_date.is_not(None))

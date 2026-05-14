@@ -95,3 +95,69 @@ async def notify_user(
         )
 
     return notification
+
+
+
+async def notify_specific_users(
+    db: AsyncSession,
+    *,
+    user_ids: list[int],
+    project_id: int,
+    actor_id: int | None,
+    notification_type: str,
+    title: str,
+    message: str | None = None,
+    issue_id: int | None = None,
+):
+    unique_user_ids = set(user_ids)
+
+    if actor_id in unique_user_ids:
+        unique_user_ids.remove(actor_id)
+
+    if not unique_user_ids:
+        return []
+
+    member_result = await db.execute(
+        select(ProjectMember.user_id).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id.in_(unique_user_ids),
+        )
+    )
+
+    valid_user_ids = list(dict.fromkeys(member_result.scalars().all()))
+
+    notifications = []
+
+    for user_id in valid_user_ids:
+        notification = Notification(
+            recipient_id=user_id,
+            actor_id=actor_id,
+            project_id=project_id,
+            issue_id=issue_id,
+            type=notification_type,
+            title=title,
+            message=message,
+        )
+
+        db.add(notification)
+        notifications.append(notification)
+
+    if notifications:
+        await db.flush()
+
+        await manager.broadcast(
+            project_id,
+            {
+                "event": "notification.created",
+                "data": {
+                    "project_id": project_id,
+                    "issue_id": issue_id,
+                    "type": notification_type,
+                    "title": title,
+                    "message": message,
+                    "recipient_ids": valid_user_ids,
+                },
+            },
+        )
+
+    return notifications

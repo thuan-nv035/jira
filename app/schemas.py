@@ -148,7 +148,8 @@ class IssueOut(BaseModel):
 
 
 class CommentCreate(BaseModel):
-    body: str = Field(min_length=1)
+    body: str
+    mentioned_user_ids: list[int] = Field(default_factory=list)
 
 
 class CommentOut(BaseModel):
