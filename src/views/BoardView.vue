@@ -693,6 +693,39 @@ async function deleteProjectLabel(label) {
   }
 }
 
+async function openIssueFromQuery() {
+  const issueId = Number(route.query.issueId);
+
+  if (!issueId) return;
+
+  let issue = issues.value.find((item) => Number(item.id) === issueId);
+
+  if (!issue) {
+    try {
+      issue = await issueApi.get(projectId.value, issueId);
+    } catch (err) {
+      error.value = getErrorMessage(err);
+      return;
+    }
+  }
+
+  if (issue) {
+    selectedIssue.value = issue;
+  }
+}
+
+function closeIssueModal() {
+  selectedIssue.value = null;
+
+  router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      issueId: undefined
+    }
+  });
+}
+
 onMounted(async () => {
   await Promise.all([
     loadBoard(),
@@ -703,11 +736,19 @@ onMounted(async () => {
       silent: true,
     }),
     loadProjectLabels({ silent: true }),
+    openIssueFromQuery()
   ]);
   socket = createProjectSocket(projectId.value, onSocketMessage, (status) => {
     socketStatus.value = status;
   });
 });
+
+watch(
+  () => route.query.issueId,
+  () => {
+    openIssueFromQuery();
+  }
+);
 </script>
 
 <template>
@@ -1375,7 +1416,7 @@ onMounted(async () => {
       :issue="selectedIssue"
       :members="members"
       :project-labels="projectLabels"
-      @close="selectedIssue = null"
+      @close="closeIssueModal"
       @changed="onIssueChanged"
       @deleted="onIssueDeleted"
     />

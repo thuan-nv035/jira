@@ -163,6 +163,10 @@ export const issueApi = {
   async remove(projectId, issueId) {
     await api.delete(`/projects/${projectId}/issues/${issueId}`);
   },
+  async get(projectId, issueId) {
+    const { data } = await api.get(`/projects/${projectId}/issues/${issueId}`);
+    return data;
+  },
 };
 
 export const commentApi = {
@@ -308,7 +312,7 @@ export const labelApi = {
 
   async removeFromIssue(issueId, labelId) {
     await api.delete(`/issues/${issueId}/labels/${labelId}`);
-  }
+  },
 };
 
 export const attachmentApi = {
