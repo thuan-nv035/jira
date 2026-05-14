@@ -153,6 +153,10 @@ function issuesByColumn(columnId) {
   return issues.value.filter((issue) => issue.column_id === columnId);
 }
 
+async function loadProjectMembers() {
+  members.value = await projectApi.members(projectId.value);
+}
+
 async function loadBoard(options = {}) {
   const silent = options?.silent ?? false;
   if (!silent) {
@@ -164,13 +168,13 @@ async function loadBoard(options = {}) {
       projectApi.get(projectId.value),
       columnApi.list(projectId.value),
       // issueApi.list(projectId.value),
-      projectApi.members(projectId.value),
+      // projectApi.members(projectId.value),
     ]);
     project.value = projectData;
     columns.value = columnData;
     await refreshIssues({ silent: true });
     // issues.value = issueData;
-    members.value = memberData;
+    // members.value = memberData;
   } catch (err) {
     error.value = getErrorMessage(err);
   } finally {
@@ -605,13 +609,15 @@ function isProjectOwner(member) {
 }
 
 onMounted(async () => {
-  await loadBoard();
-  await loadCurrentUser();
-  // await loadProjectMembers();
-  await loadProjectLogs({
-    reset: true,
-    silent: true,
-  });
+  await Promise.all([
+    loadBoard(),
+    loadCurrentUser(),
+    loadProjectMembers(),
+    loadProjectLogs({
+      reset: true,
+      silent: true,
+    }),
+  ])
   socket = createProjectSocket(projectId.value, onSocketMessage, (status) => {
     socketStatus.value = status;
   });

@@ -457,6 +457,34 @@ const checklistPercent = computed(() => {
   return Math.round((checklistDone.value * 100) / checklistTotal.value);
 });
 
+const reporter = computed(() => {
+  if (!props.issue.reporter_id) return null;
+
+  return props.members
+    .map(normalizeMember)
+    .find((member) => Number(member.id) === Number(props.issue.reporter_id));
+});
+
+function normalizeMember(member) {
+  if (!member) return null;
+
+  if (member.user) {
+    return {
+      id: member.user.id,
+      full_name: member.user.full_name || member.user.email || "User",
+      email: member.user.email || "",
+      avatar_url: member.user.avatar_url || "",
+    };
+  }
+
+  return {
+    id: member.id || member.user_id,
+    full_name: member.full_name || member.email || "User",
+    email: member.email || "",
+    avatar_url: member.avatar_url || "",
+  };
+}
+
 onMounted(async () => {
   await Promise.all([loadComments(), loadAttachments(), loadChecklists()]);
 
@@ -481,14 +509,18 @@ onBeforeUnmount(() => {
       <div class="space-y-4">
         <div>
           <label class="label">Title</label>
-          <input v-model="form.title"  :disabled="!canEdit" class="input text-base font-bold" />
+          <input
+            v-model="form.title"
+            :disabled="!canEdit"
+            class="input text-base font-bold"
+          />
         </div>
 
         <div>
           <label class="label">Description</label>
           <textarea
             v-model="form.description"
-             :disabled="!canEdit"
+            :disabled="!canEdit"
             class="input min-h-44 resize-none"
           ></textarea>
         </div>
@@ -501,11 +533,21 @@ onBeforeUnmount(() => {
         </p>
 
         <div class="flex flex-wrap gap-3">
-          <button class="btn-primary" v-if="canEdit" :disabled="loading" @click="saveIssue">
+          <button
+            class="btn-primary"
+            v-if="canEdit"
+            :disabled="loading"
+            @click="saveIssue"
+          >
             <Save class="h-4 w-4" />
             {{ loading ? "Saving..." : "Save changes" }}
           </button>
-          <button class="btn-danger" v-if="canEdit" :disabled="deleting" @click="deleteIssue">
+          <button
+            class="btn-danger"
+            v-if="canEdit"
+            :disabled="deleting"
+            @click="deleteIssue"
+          >
             <Trash2 class="h-4 w-4" />
             {{ deleting ? "Deleting..." : "Delete" }}
           </button>
@@ -542,7 +584,11 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <form v-if="canEdit" class="mb-4 flex gap-2" @submit.prevent="createChecklist">
+          <form
+            v-if="canEdit"
+            class="mb-4 flex gap-2"
+            @submit.prevent="createChecklist"
+          >
             <input
               v-model="newChecklistTitle"
               type="text"
@@ -689,7 +735,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div
-             v-if="canEdit"
+            v-if="canEdit"
             class="mb-4 rounded-2xl border-2 border-dashed p-6 text-center transition"
             :class="
               isDraggingFile
@@ -820,7 +866,11 @@ onBeforeUnmount(() => {
             <h3 class="font-black text-slate-950">Comments</h3>
           </div>
 
-          <form v-if="canEdit" class="mb-4 flex gap-2" @submit.prevent="addComment">
+          <form
+            v-if="canEdit"
+            class="mb-4 flex gap-2"
+            @submit.prevent="addComment"
+          >
             <input
               v-model="commentText"
               class="input"
@@ -863,7 +913,7 @@ onBeforeUnmount(() => {
       <aside class="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
         <div>
           <label class="label">Type</label>
-          <select v-model="form.issue_type" class="input">
+          <select v-model="form.issue_type" :disabled="!canEdit" class="input">
             <option value="TASK">TASK</option>
             <option value="BUG">BUG</option>
             <option value="STORY">STORY</option>
@@ -880,7 +930,7 @@ onBeforeUnmount(() => {
         </div>
         <div>
           <label class="label">Assignee</label>
-          <select v-model="form.assignee_id" class="input">
+          <select v-model="form.assignee_id" :disabled="!canEdit" class="input">
             <option value="">Unassigned</option>
             <option
               v-for="member in members"
@@ -897,6 +947,7 @@ onBeforeUnmount(() => {
           </label>
 
           <input
+            :disabled="!canEdit"
             v-model="form.due_date"
             type="datetime-local"
             class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400"
@@ -910,7 +961,23 @@ onBeforeUnmount(() => {
           </p>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-          <p><b>Reporter ID:</b> {{ issue.reporter_id || currentUser?.id }}</p>
+          <div class="flex items-center gap-3">
+            <div
+              class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white"
+            >
+              {{ reporter?.full_name?.slice(0, 2).toUpperCase() || "?" }}
+            </div>
+
+            <div>
+              <p class="text-sm font-black text-slate-800">
+                Reporter: {{ reporter?.full_name || "Unknown" }}
+              </p>
+
+              <p v-if="reporter?.email" class="text-xs text-slate-400">
+                {{ reporter.email }}
+              </p>
+            </div>
+          </div>
           <p>
             <b>Created:</b>
             {{ new Date(issue.created_at).toLocaleDateString() }}
