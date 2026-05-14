@@ -155,6 +155,31 @@ function getAvatarColor(name) {
       {{ issue.description }}
     </p>
 
+    <div
+      v-if="issue.labels && issue.labels.length > 0"
+      class="mt-3 flex flex-wrap gap-1.5"
+    >
+      <span
+        v-for="label in issue.labels.slice(0, 3)"
+        :key="label.id"
+        class="rounded-full border px-2 py-1 text-[11px] font-black"
+        :style="{
+          borderColor: label.color,
+          color: label.color,
+          backgroundColor: `${label.color}14`,
+        }"
+      >
+        {{ label.name }}
+      </span>
+
+      <span
+        v-if="issue.labels.length > 3"
+        class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-black text-slate-400"
+      >
+        +{{ issue.labels.length - 3 }}
+      </span>
+    </div>
+
     <div v-if="issue.checklist_total > 0" class="mt-3">
       <div
         class="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-400"

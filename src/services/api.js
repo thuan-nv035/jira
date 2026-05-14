@@ -276,6 +276,41 @@ export const dashboardApi = {
   },
 };
 
+export const labelApi = {
+  async listProjectLabels(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/labels`);
+    return data;
+  },
+
+  async create(projectId, payload) {
+    const { data } = await api.post(`/projects/${projectId}/labels`, payload);
+    return data;
+  },
+
+  async update(labelId, payload) {
+    const { data } = await api.patch(`/labels/${labelId}`, payload);
+    return data;
+  },
+
+  async remove(labelId) {
+    await api.delete(`/labels/${labelId}`);
+  },
+
+  async listIssueLabels(issueId) {
+    const { data } = await api.get(`/issues/${issueId}/labels`);
+    return data;
+  },
+
+  async addToIssue(issueId, labelId) {
+    const { data } = await api.post(`/issues/${issueId}/labels/${labelId}`);
+    return data;
+  },
+
+  async removeFromIssue(issueId, labelId) {
+    await api.delete(`/issues/${issueId}/labels/${labelId}`);
+  }
+};
+
 export const attachmentApi = {
   async list(issueId) {
     const { data } = await api.get(`/issues/${issueId}/attachments`);

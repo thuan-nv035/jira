@@ -29,7 +29,7 @@ const routes = [
     name: "board",
     component: () => import("../views/BoardView.vue"),
     meta: { requiresAuth: true }
-  }
+  },
 ];
 
 const router = createRouter({

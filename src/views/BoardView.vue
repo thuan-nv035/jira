@@ -30,6 +30,7 @@ import {
   issueApi,
   projectApi,
   authApi,
+  labelApi,
 } from "../services/api";
 import { createProjectSocket } from "../services/socket";
 
@@ -57,6 +58,13 @@ const projectLogLoading = ref(false);
 const projectLogLoadingMore = ref(false);
 const projectLogHasMore = ref(true);
 const PROJECT_LOG_LIMIT = 20;
+
+const projectLabels = ref([]);
+const labelLoading = ref(false);
+const labelForm = reactive({
+  name: "",
+  color: "#2563eb",
+});
 
 const filterLoading = ref(false);
 
@@ -237,6 +245,25 @@ async function onDropIssue(column) {
 
 function onSocketMessage(payload) {
   lastEvent.value = payload;
+
+  if (
+    ["label.created", "label.updated", "label.deleted"].includes(payload.event)
+  ) {
+    loadProjectLabels({ silent: true });
+    refreshIssues({ silent: true });
+    window.dispatchEvent(
+      new CustomEvent("jira-label-refresh", { detail: payload.data }),
+    );
+    return;
+  }
+
+  if (["issue.label_added", "issue.label_removed"].includes(payload.event)) {
+    window.dispatchEvent(
+      new CustomEvent("jira-label-refresh", { detail: payload.data }),
+    );
+    refreshIssues({ silent: true });
+    return;
+  }
 
   if (
     [
@@ -608,6 +635,60 @@ function isProjectOwner(member) {
   return Number(project.value?.owner_id) === Number(member.id);
 }
 
+async function loadProjectLabels(options = {}) {
+  const silent = options.silent ?? false;
+
+  if (!projectId.value) return;
+
+  if (!silent) {
+    labelLoading.value = true;
+  }
+
+  try {
+    projectLabels.value = await labelApi.listProjectLabels(projectId.value);
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    labelLoading.value = false;
+  }
+}
+
+async function createProjectLabel() {
+  const name = labelForm.name.trim();
+
+  if (!name) return;
+
+  try {
+    await labelApi.create(projectId.value, {
+      name,
+      color: labelForm.color || "#2563eb",
+    });
+
+    labelForm.name = "";
+    labelForm.color = "#2563eb";
+
+    await loadProjectLabels({ silent: true });
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function deleteProjectLabel(label) {
+  // if (!canEditIssues.value) return;
+  if (!canManageColumns.value) return;
+  if (!confirm(`Delete label "${label.name}"?`)) return;
+
+  try {
+    await labelApi.remove(label.id);
+    projectLabels.value = projectLabels.value.filter(
+      (item) => item.id !== label.id,
+    );
+    await refreshIssues({ silent: true });
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
 onMounted(async () => {
   await Promise.all([
     loadBoard(),
@@ -617,7 +698,8 @@ onMounted(async () => {
       reset: true,
       silent: true,
     }),
-  ])
+    loadProjectLabels({ silent: true }),
+  ]);
   socket = createProjectSocket(projectId.value, onSocketMessage, (status) => {
     socketStatus.value = status;
   });
@@ -726,6 +808,9 @@ onMounted(async () => {
         </button>
         <button class="btn-secondary" @click="showAddMember = true">
           <UserPlus class="h-4 w-4" /> Add member
+        </button>
+        <button class="btn-secondary" @click="router.push(`/projects/${projectId}/dashboard`)">
+          <Activity class="h-4 w-4" /> Dashboard
         </button>
         <button
           v-if="canEditIssues"
@@ -854,9 +939,93 @@ onMounted(async () => {
     </section>
 
     <section
+      class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base font-black text-slate-950">Project Labels</h2>
+          <p class="text-sm text-slate-500">
+            Create and manage labels used by issues
+          </p>
+        </div>
+
+        <span
+          class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500"
+        >
+          {{ projectLabels.length }} label(s)
+        </span>
+      </div>
+
+      <form
+        v-if="canEditIssues"
+        class="mb-4 grid gap-3 md:grid-cols-[1fr_auto_auto]"
+        @submit.prevent="createProjectLabel"
+      >
+        <input
+          v-model="labelForm.name"
+          type="text"
+          placeholder="Label name, e.g. Frontend"
+          class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+        />
+
+        <input
+          v-model="labelForm.color"
+          type="color"
+          class="h-12 w-20 cursor-pointer rounded-2xl border border-slate-200 bg-white p-2"
+        />
+
+        <button
+          type="submit"
+          class="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
+          :disabled="!labelForm.name.trim()"
+        >
+          Add label
+        </button>
+      </form>
+
+      <div
+        v-if="labelLoading"
+        class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+      >
+        Loading labels...
+      </div>
+
+      <div v-else class="flex flex-wrap gap-2">
+        <div
+          v-for="label in projectLabels"
+          :key="label.id"
+          class="group flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-black"
+          :style="{
+            borderColor: label.color,
+            color: label.color,
+            backgroundColor: `${label.color}14`,
+          }"
+        >
+          <span>{{ label.name }}</span>
+
+          <button
+            v-if="canEditIssues"
+            type="button"
+            class="hidden rounded-full px-1 text-xs group-hover:inline"
+            title="Delete label"
+            @click="deleteProjectLabel(label)"
+          >
+            ×
+          </button>
+        </div>
+
+        <p
+          v-if="projectLabels.length === 0"
+          class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+        >
+          No labels yet.
+        </p>
+      </div>
+    </section>
+    <ProjectDashboard :project-id="projectId" />
+    <section
       class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
     >
-      <ProjectDashboard :project-id="projectId" />
       <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
         <div>
           <label
@@ -1176,6 +1345,7 @@ onMounted(async () => {
       :project-id="projectId"
       :issue="selectedIssue"
       :members="members"
+      :project-labels="projectLabels"
       @close="selectedIssue = null"
       @changed="onIssueChanged"
       @deleted="onIssueDeleted"
