@@ -75,6 +75,7 @@ const filters = reactive({
   issue_type: "",
   has_attachment: "",
   overdue: "",
+  label_id: "",
   sort_by: "updated_at",
   order: "desc",
 });
@@ -396,6 +397,7 @@ const hasActiveIssueFilters = computed(() => {
     filters.priority ||
     filters.issue_type ||
     filters.overdue ||
+    filters.label_id ||
     filters.has_attachment,
   );
 });
@@ -410,6 +412,7 @@ function buildIssueSearchParams() {
       filters.has_attachment === "" ? "" : filters.has_attachment === "true",
     sort_by: filters.sort_by,
     order: filters.order,
+    label_id: filters.label_id ? Number(filters.label_id) : "",
     overdue: filters.overdue === "" ? "" : filters.overdue === "true",
   };
 
@@ -464,6 +467,7 @@ function clearIssueFilters() {
   filters.sort_by = "updated_at";
   filters.order = "desc";
   filters.overdue = "";
+  filters.label_id = "";
 }
 
 async function loadProjectLogs(options = {}) {
@@ -809,7 +813,10 @@ onMounted(async () => {
         <button class="btn-secondary" @click="showAddMember = true">
           <UserPlus class="h-4 w-4" /> Add member
         </button>
-        <button class="btn-secondary" @click="router.push(`/projects/${projectId}/dashboard`)">
+        <button
+          class="btn-secondary"
+          @click="router.push(`/projects/${projectId}/dashboard`)"
+        >
           <Activity class="h-4 w-4" /> Dashboard
         </button>
         <button
@@ -1026,7 +1033,7 @@ onMounted(async () => {
     <section
       class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
     >
-      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div>
           <label
             class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
@@ -1150,6 +1157,28 @@ onMounted(async () => {
             <option value="">All</option>
             <option value="true">Overdue</option>
             <option value="false">Not overdue</option>
+          </select>
+        </div>
+        <div>
+          <label
+            class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-400"
+          >
+            Label
+          </label>
+
+          <select
+            v-model="filters.label_id"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+          >
+            <option value="">All labels</option>
+
+            <option
+              v-for="label in projectLabels"
+              :key="label.id"
+              :value="label.id"
+            >
+              {{ label.name }}
+            </option>
           </select>
         </div>
       </div>
