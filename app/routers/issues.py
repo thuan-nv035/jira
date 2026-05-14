@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.services.activity_logs import create_activity_log
 from app.database import get_db
 from app.deps import get_current_user, require_project_editor, require_project_member
@@ -99,6 +101,19 @@ async def _attach_issue_counts(db: AsyncSession, issue: Issue) -> Issue:
 
     return issue
 
+async def _reload_issue_with_labels(db: AsyncSession, issue_id: int) -> Issue:
+    result = await db.execute(
+        select(Issue)
+        .options(selectinload(Issue.labels))
+        .where(Issue.id == issue_id)
+    )
+
+    issue = result.scalar_one_or_none()
+
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    return issue
 
 @router.get("", response_model=list[IssueOut])
 async def list_issues(
@@ -137,6 +152,7 @@ async def list_issues(
             func.coalesce(checklist_count_subq.c.checklist_total, 0).label("checklist_total"),
             func.coalesce(checklist_count_subq.c.checklist_done, 0).label("checklist_done"),
         )
+        .options(selectinload(Issue.labels))
         .outerjoin(attachment_count_subq, attachment_count_subq.c.issue_id == Issue.id)
         .outerjoin(checklist_count_subq, checklist_count_subq.c.issue_id == Issue.id)
         .where(Issue.project_id == project_id)
@@ -236,6 +252,7 @@ async def create_issue(project_id: int, payload: IssueCreate, current_user: User
         message=issue.title,
         issue_id=issue.id,
     )
+    issue = await _reload_issue_with_labels(db, issue.id)
     issue.attachment_count = 0
     issue.checklist_total = 0
     issue.checklist_done = 0
@@ -291,6 +308,7 @@ async def search_issues(
             func.coalesce(checklist_count_subq.c.checklist_total, 0).label("checklist_total"),
             func.coalesce(checklist_count_subq.c.checklist_done, 0).label("checklist_done"),
         )
+        .options(selectinload(Issue.labels))
         .outerjoin(attachment_count_subq, attachment_count_subq.c.issue_id == Issue.id)
         .outerjoin(checklist_count_subq, checklist_count_subq.c.issue_id == Issue.id)
         .where(Issue.project_id == project_id)
@@ -381,7 +399,7 @@ async def search_issues(
 @router.get("/{issue_id}", response_model=IssueOut)
 async def get_issue(project_id: int, issue_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await require_project_member(db, project_id, current_user.id)
-    result = await db.execute(select(Issue).where(Issue.id == issue_id, Issue.project_id == project_id))
+    result = await db.execute(select(Issue).options(selectinload(Issue.labels)).where(Issue.id == issue_id, Issue.project_id == project_id))
     issue = result.scalar_one_or_none()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
@@ -444,6 +462,7 @@ async def update_issue(project_id: int, issue_id: int, payload: IssueUpdate, cur
                 },
             },
         )
+    issue = await _reload_issue_with_labels(db, issue.id)
     return await _attach_issue_counts(db, issue)
 
 
@@ -506,6 +525,7 @@ async def move_issue(project_id: int, issue_id: int, payload: IssueMove, current
             },
         },
     )
+    issue = await _reload_issue_with_labels(db, issue.id)
     return await _attach_issue_counts(db, issue)
 
 

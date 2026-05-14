@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func, JSON
+from sqlalchemy import ForeignKey, String, Text, JSON, DateTime, func, Table, Column, Integer, UniqueConstraint, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -71,6 +71,12 @@ class BoardColumn(Base, TimestampMixin):
     project: Mapped[Project] = relationship(back_populates="columns")
     issues: Mapped[list["Issue"]] = relationship(back_populates="column")
 
+issue_labels_table = Table(
+    "issue_labels",
+    Base.metadata,
+    Column("issue_id", ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True),
+    Column("label_id", ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True),
+)
 
 class Issue(Base, TimestampMixin):
     __tablename__ = "issues"
@@ -110,6 +116,11 @@ class Issue(Base, TimestampMixin):
     checklists: Mapped[list["ChecklistItem"]] = relationship(
         back_populates="issue",
         cascade="all, delete-orphan"
+    )
+
+    labels: Mapped[list["Label"]] = relationship(
+        secondary=issue_labels_table,
+        back_populates="issues",
     )
 
     @property
@@ -226,3 +237,25 @@ class ChecklistItem(Base, TimestampMixin):
 
     issue: Mapped["Issue"] = relationship(back_populates="checklists")
     creator: Mapped[Optional["User"]] = relationship()
+
+class Label(Base, TimestampMixin):
+    __tablename__ = "labels"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_project_label_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(80))
+    color: Mapped[str] = mapped_column(String(30), default="#64748b")
+
+    project: Mapped["Project"] = relationship()
+    issues: Mapped[list["Issue"]] = relationship(
+        secondary=issue_labels_table,
+        back_populates="labels",
+    )

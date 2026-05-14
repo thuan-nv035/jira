@@ -104,6 +104,25 @@ class IssueMove(BaseModel):
     column_id: int
     position: int = 0
 
+class LabelCreate(BaseModel):
+    name: str
+    color: str = "#64748b"
+
+
+class LabelUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
+class LabelOut(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    color: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 class IssueOut(BaseModel):
     id: int
@@ -124,6 +143,7 @@ class IssueOut(BaseModel):
     is_overdue: bool = False
     checklist_total: int = 0
     checklist_done: int = 0
+    labels: list[LabelOut] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
