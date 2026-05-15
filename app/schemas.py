@@ -145,6 +145,8 @@ class IssueOut(BaseModel):
     checklist_done: int = 0
     labels: list[LabelOut] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
+    epic_id: Optional[int] = None
+    sprint_id: Optional[int] = None
 
 
 class CommentCreate(BaseModel):
@@ -266,3 +268,64 @@ class DashboardAssigneeItemOut(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     total: int
+
+class EpicCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    color: str = "#7c3aed"
+
+
+class EpicUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+
+
+class EpicOut(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    description: Optional[str]
+    color: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SprintCreate(BaseModel):
+    name: str
+    goal: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    status: str = "PLANNED"
+
+
+class SprintUpdate(BaseModel):
+    name: Optional[str] = None
+    goal: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    status: Optional[str] = None
+
+
+class SprintOut(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    goal: Optional[str]
+    start_date: Optional[datetime]
+    end_date: Optional[datetime]
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IssueEpicUpdate(BaseModel):
+    epic_id: Optional[int] = None
+
+
+class IssueSprintUpdate(BaseModel):
+    sprint_id: Optional[int] = None

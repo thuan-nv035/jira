@@ -46,6 +46,16 @@ class Project(Base, TimestampMixin):
         cascade="all, delete-orphan"
     )
 
+    epics: Mapped[list["Epic"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan"
+    )
+
+    sprints: Mapped[list["Sprint"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan"
+    )
+
 class ProjectMember(Base, TimestampMixin):
     __tablename__ = "project_members"
     __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_user"),)
@@ -96,6 +106,19 @@ class Issue(Base, TimestampMixin):
 
     project: Mapped[Project] = relationship(back_populates="issues")
     column: Mapped[BoardColumn] = relationship(back_populates="issues")
+
+    epic_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("epics.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    sprint_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sprints.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     reporter: Mapped[Optional[User]] = relationship(foreign_keys=[reporter_id])
     assignee: Mapped[Optional[User]] = relationship(foreign_keys=[assignee_id])
     comments: Mapped[list["Comment"]] = relationship(back_populates="issue", cascade="all, delete-orphan")
@@ -122,6 +145,9 @@ class Issue(Base, TimestampMixin):
         secondary=issue_labels_table,
         back_populates="issues",
     )
+
+    epic: Mapped[Optional["Epic"]] = relationship(back_populates="issues")
+    sprint: Mapped[Optional["Sprint"]] = relationship(back_populates="issues")
 
     @property
     def is_overdue(self) -> bool:
@@ -259,3 +285,50 @@ class Label(Base, TimestampMixin):
         secondary=issue_labels_table,
         back_populates="labels",
     )
+
+class Epic(Base, TimestampMixin):
+    __tablename__ = "epics"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    color: Mapped[str] = mapped_column(String(30), default="#7c3aed")
+
+    project: Mapped["Project"] = relationship(back_populates="epics")
+    issues: Mapped[list["Issue"]] = relationship(back_populates="epic")
+
+
+class Sprint(Base, TimestampMixin):
+    __tablename__ = "sprints"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(120))
+    goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    start_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    end_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(String(30), default="PLANNED")
+    # PLANNED | ACTIVE | COMPLETED
+
+    project: Mapped["Project"] = relationship(back_populates="sprints")
+    issues: Mapped[list["Issue"]] = relationship(back_populates="sprint")

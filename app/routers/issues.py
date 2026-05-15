@@ -63,6 +63,8 @@ def _issue_activity_snapshot(issue: Issue) -> dict:
         "column_id": issue.column_id,
         "assignee_id": issue.assignee_id,
         "position": issue.position,
+        "epic_id": issue.epic_id,
+        "sprint_id": issue.sprint_id,
         "due_date": issue.due_date.isoformat() if issue.due_date else None,
     }
 
@@ -214,6 +216,8 @@ async def create_issue(project_id: int, payload: IssueCreate, current_user: User
         due_date=payload.due_date,
         reporter_id=current_user.id,
         code=code,
+        epic_id=payload.epic_id,
+        sprint_id=payload.sprint_id,
         position=position,
     )
     db.add(issue)
