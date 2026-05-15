@@ -30,9 +30,11 @@ import {
   attachmentApi,
   checklistApi,
   commentApi,
+  epicApi,
   getErrorMessage,
   issueApi,
   labelApi,
+  sprintApi,
 } from "../services/api";
 import { getUser } from "../utils/storage";
 
@@ -42,6 +44,8 @@ const props = defineProps({
   members: { type: Array, default: () => [] },
   canEdit: { type: Boolean, default: true },
   projectLabels: { type: Array, default: () => [] },
+  epics: { type: Array, default: () => [] },
+  sprints: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["close", "changed", "deleted"]);
@@ -86,7 +90,23 @@ const form = reactive({
   issue_type: props.issue.issue_type,
   priority: props.issue.priority,
   assignee_id: props.issue.assignee_id || "",
+  epic_id: props.issue.epic_id || "",
+  sprint_id: props.issue.sprint_id || "",
   due_date: toDatetimeLocal(props.issue.due_date),
+});
+
+const selectedEpic = computed(() => {
+  if (!form.epic_id) return null;
+
+  return props.epics.find((epic) => Number(epic.id) === Number(form.epic_id));
+});
+
+const selectedSprint = computed(() => {
+  if (!form.sprint_id) return null;
+
+  return props.sprints.find(
+    (sprint) => Number(sprint.id) === Number(form.sprint_id),
+  );
 });
 
 const assigneeName = computed(() => {
@@ -563,41 +583,6 @@ function normalizeMember(member) {
   };
 }
 
-const selectedMentionUsers = computed(() => {
-  const ids = new Set(mentionedUserIds.value.map(Number));
-
-  return mentionableMembers.value.filter((member) =>
-    ids.has(Number(member.id)),
-  );
-});
-
-function addMentionUser(userId) {
-  if (!userId) return;
-
-  const id = Number(userId);
-
-  if (!mentionedUserIds.value.includes(id)) {
-    mentionedUserIds.value.push(id);
-  }
-
-  const user = mentionableMembers.value.find(
-    (member) => Number(member.id) === id,
-  );
-
-  if (user) {
-    const mentionText = `@${user.full_name} `;
-
-    if (!commentText.value.includes(mentionText)) {
-      commentText.value = `${commentText.value}${commentText.value ? " " : ""}${mentionText}`;
-    }
-  }
-}
-
-function removeMentionUser(userId) {
-  mentionedUserIds.value = mentionedUserIds.value.filter(
-    (id) => Number(id) !== Number(userId),
-  );
-}
 function highlightMentions(text) {
   if (!text) return "";
 
@@ -875,6 +860,59 @@ function getChangedFields(log) {
   return fields.join(", ");
 }
 
+async function updateIssueEpic() {
+  if (!props.canEdit) return;
+
+  try {
+    await epicApi.updateIssueEpic(
+      props.issue.id,
+      form.epic_id ? Number(form.epic_id) : null,
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("jira-epic-sprint-refresh", {
+        detail: {
+          issue_id: props.issue.id,
+        },
+      }),
+    );
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function updateIssueSprint() {
+  if (!props.canEdit) return;
+
+  try {
+    await sprintApi.updateIssueSprint(
+      props.issue.id,
+      form.sprint_id ? Number(form.sprint_id) : null,
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("jira-epic-sprint-refresh", {
+        detail: {
+          issue_id: props.issue.id,
+        },
+      }),
+    );
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+function onEpicSprintRealtime(event) {
+  const issueId = Number(event.detail?.issue_id);
+
+  if (issueId === Number(props.issue.id)) {
+    loadIssueActivities({
+      reset: true,
+      silent: true,
+    });
+  }
+}
+
 onMounted(async () => {
   await Promise.all([
     loadComments(),
@@ -888,6 +926,7 @@ onMounted(async () => {
   window.addEventListener("jira-checklist-refresh", onChecklistRealtime);
   window.addEventListener("jira-label-refresh", onLabelRealtime);
   window.addEventListener("jira-activity-refresh", onIssueActivityRealtime);
+  window.addEventListener("jira-epic-sprint-refresh", onEpicSprintRealtime);
 });
 
 onBeforeUnmount(() => {
@@ -895,6 +934,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("jira-checklist-refresh", onChecklistRealtime);
   window.addEventListener("jira-label-refresh", onLabelRealtime);
   window.removeEventListener("jira-activity-refresh", onIssueActivityRealtime);
+  window.removeEventListener("jira-epic-sprint-refresh", onEpicSprintRealtime);
 });
 </script>
 
@@ -1502,6 +1542,73 @@ onBeforeUnmount(() => {
               {{ member.user.full_name }}
             </option>
           </select>
+        </div>
+        <div>
+          <label class="mb-2 block text-sm font-bold text-slate-600">
+            Epic
+          </label>
+
+          <select
+            v-model="form.epic_id"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-violet-400 disabled:bg-slate-100"
+            :disabled="!canEdit"
+            @change="updateIssueEpic"
+          >
+            <option value="">No epic</option>
+
+            <option v-for="epic in epics" :key="epic.id" :value="epic.id">
+              {{ epic.name }}
+            </option>
+          </select>
+
+          <div
+            v-if="selectedEpic"
+            class="mt-2 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"
+            :style="{
+              borderColor: selectedEpic.color,
+              color: selectedEpic.color,
+              backgroundColor: `${selectedEpic.color}14`,
+            }"
+          >
+            <span
+              class="h-2 w-2 rounded-full"
+              :style="{ backgroundColor: selectedEpic.color }"
+            ></span>
+            {{ selectedEpic.name }}
+          </div>
+        </div>
+
+        <div>
+          <label class="mb-2 block text-sm font-bold text-slate-600">
+            Sprint
+          </label>
+
+          <select
+            v-model="form.sprint_id"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+            :disabled="!canEdit"
+            @change="updateIssueSprint"
+          >
+            <option value="">Backlog / No sprint</option>
+
+            <option
+              v-for="sprint in sprints"
+              :key="sprint.id"
+              :value="sprint.id"
+            >
+              {{ sprint.name }} — {{ sprint.status }}
+            </option>
+          </select>
+
+          <div
+            v-if="selectedSprint"
+            class="mt-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700"
+          >
+            {{ selectedSprint.name }}
+            <span class="rounded-full bg-white px-2 py-0.5 text-[10px]">
+              {{ selectedSprint.status }}
+            </span>
+          </div>
         </div>
         <div>
           <label class="mb-2 block text-sm font-bold text-slate-600">

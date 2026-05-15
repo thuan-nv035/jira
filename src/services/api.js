@@ -401,4 +401,62 @@ export const attachmentApi = {
   },
 };
 
+export const epicApi = {
+  async list(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/epics`);
+    return data;
+  },
+
+  async create(projectId, payload) {
+    const { data } = await api.post(`/projects/${projectId}/epics`, payload);
+    return data;
+  },
+
+  async update(epicId, payload) {
+    const { data } = await api.patch(`/epics/${epicId}`, payload);
+    return data;
+  },
+
+  async remove(epicId) {
+    await api.delete(`/epics/${epicId}`);
+  },
+
+  async updateIssueEpic(issueId, epicId) {
+    const { data } = await api.patch(`/issues/${issueId}/epic`, {
+      epic_id: epicId
+    });
+
+    return data;
+  }
+};
+
+export const sprintApi = {
+  async list(projectId) {
+    const { data } = await api.get(`/projects/${projectId}/sprints`);
+    return data;
+  },
+
+  async create(projectId, payload) {
+    const { data } = await api.post(`/projects/${projectId}/sprints`, payload);
+    return data;
+  },
+
+  async update(sprintId, payload) {
+    const { data } = await api.patch(`/sprints/${sprintId}`, payload);
+    return data;
+  },
+
+  async remove(sprintId) {
+    await api.delete(`/sprints/${sprintId}`);
+  },
+
+  async updateIssueSprint(issueId, sprintId) {
+    const { data } = await api.patch(`/issues/${issueId}/sprint`, {
+      sprint_id: sprintId
+    });
+
+    return data;
+  }
+};
+
 export { api, getErrorMessage };

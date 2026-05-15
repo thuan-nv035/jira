@@ -10,16 +10,28 @@ import {
 } from "lucide-vue-next";
 import { computed } from "vue";
 const props = defineProps({
-  issue: {
-    type: Object,
-    required: true,
-  },
-  members: {
-    type: Array,
-    default: () => [],
-  },
+  issue: { type: Object, required: true },
+  members: { type: Array, default: () => [] },
+  epics: { type: Array, default: () => [] },
+  sprints: { type: Array, default: () => [] },
 });
 const emit = defineEmits(["open", "dragstart"]);
+
+const issueEpic = computed(() => {
+  if (!props.issue.epic_id) return null;
+
+  return props.epics.find(
+    (epic) => Number(epic.id) === Number(props.issue.epic_id),
+  );
+});
+
+const issueSprint = computed(() => {
+  if (!props.issue.sprint_id) return null;
+
+  return props.sprints.find(
+    (sprint) => Number(sprint.id) === Number(props.issue.sprint_id),
+  );
+});
 
 const checklistProgress = computed(() => {
   const total = Number(props.issue.checklist_total || 0);
@@ -177,6 +189,27 @@ function getAvatarColor(name) {
         class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-black text-slate-400"
       >
         +{{ issue.labels.length - 3 }}
+      </span>
+    </div>
+
+    <div class="mt-3 flex flex-wrap gap-1.5">
+      <span
+        v-if="issueEpic"
+        class="rounded-full border px-2 py-1 text-[11px] font-black"
+        :style="{
+          borderColor: issueEpic.color,
+          color: issueEpic.color,
+          backgroundColor: `${issueEpic.color}14`,
+        }"
+      >
+        {{ issueEpic.name }}
+      </span>
+
+      <span
+        v-if="issueSprint"
+        class="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-black text-blue-700"
+      >
+        {{ issueSprint.name }}
       </span>
     </div>
 

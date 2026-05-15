@@ -24,13 +24,15 @@ import IssueDetailModal from "../components/IssueDetailModal.vue";
 import IssueFormModal from "../components/IssueFormModal.vue";
 import ProjectDashboard from "../components/ProjectDashboard.vue";
 import {
-  activityApi,
+  authApi,
   columnApi,
+  epicApi,
   getErrorMessage,
   issueApi,
-  projectApi,
-  authApi,
   labelApi,
+  projectApi,
+  sprintApi,
+  activityApi
 } from "../services/api";
 import { createProjectSocket } from "../services/socket";
 
@@ -81,6 +83,26 @@ const filters = reactive({
 });
 
 let filterTimer = null;
+
+const epics = ref([]);
+const sprints = ref([]);
+
+const epicLoading = ref(false);
+const sprintLoading = ref(false);
+
+const epicForm = reactive({
+  name: "",
+  description: "",
+  color: "#7c3aed",
+});
+
+const sprintForm = reactive({
+  name: "",
+  goal: "",
+  start_date: "",
+  end_date: "",
+  status: "PLANNED",
+});
 
 const MAX_VISIBLE_AVATARS = 9;
 
@@ -244,6 +266,33 @@ async function onDropIssue(column) {
 
 function onSocketMessage(payload) {
   lastEvent.value = payload;
+
+  if (
+    ["epic.created", "epic.updated", "epic.deleted"].includes(payload.event)
+  ) {
+    loadEpics({ silent: true });
+    refreshIssues({ silent: true });
+    return;
+  }
+
+  if (
+    ["sprint.created", "sprint.updated", "sprint.deleted"].includes(
+      payload.event,
+    )
+  ) {
+    loadSprints({ silent: true });
+    refreshIssues({ silent: true });
+    return;
+  }
+
+  if (["issue.epic_updated", "issue.sprint_updated"].includes(payload.event)) {
+    refreshIssues({ silent: true });
+    window.dispatchEvent(
+      new CustomEvent("jira-epic-sprint-refresh", { detail: payload.data }),
+    );
+    return;
+  }
+
   if (payload.event === "activity.created") {
     window.dispatchEvent(
       new CustomEvent("jira-activity-refresh", { detail: payload.data }),
@@ -732,6 +781,122 @@ function closeIssueModal() {
   });
 }
 
+async function loadEpics(options = {}) {
+  const silent = options.silent ?? false;
+
+  if (!projectId.value) return;
+
+  if (!silent) {
+    epicLoading.value = true;
+  }
+
+  try {
+    epics.value = await epicApi.list(projectId.value);
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    epicLoading.value = false;
+  }
+}
+
+async function loadSprints(options = {}) {
+  const silent = options.silent ?? false;
+
+  if (!projectId.value) return;
+
+  if (!silent) {
+    sprintLoading.value = true;
+  }
+
+  try {
+    sprints.value = await sprintApi.list(projectId.value);
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    sprintLoading.value = false;
+  }
+}
+
+async function createEpic() {
+  const name = epicForm.name.trim();
+
+  if (!name) return;
+
+  try {
+    await epicApi.create(projectId.value, {
+      name,
+      description: epicForm.description || null,
+      color: epicForm.color || "#7c3aed",
+    });
+
+    epicForm.name = "";
+    epicForm.description = "";
+    epicForm.color = "#7c3aed";
+
+    await loadEpics({ silent: true });
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function createSprint() {
+  const name = sprintForm.name.trim();
+
+  if (!name) return;
+
+  try {
+    await sprintApi.create(projectId.value, {
+      name,
+      goal: sprintForm.goal || null,
+      start_date: sprintForm.start_date
+        ? new Date(sprintForm.start_date).toISOString()
+        : null,
+      end_date: sprintForm.end_date
+        ? new Date(sprintForm.end_date).toISOString()
+        : null,
+      status: sprintForm.status || "PLANNED",
+    });
+
+    sprintForm.name = "";
+    sprintForm.goal = "";
+    sprintForm.start_date = "";
+    sprintForm.end_date = "";
+    sprintForm.status = "PLANNED";
+
+    await loadSprints({ silent: true });
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function deleteEpic(epic) {
+  if (!canEditIssues.value) return;
+
+  if (!confirm(`Delete epic "${epic.name}"?`)) return;
+
+  try {
+    await epicApi.remove(epic.id);
+    epics.value = epics.value.filter((item) => item.id !== epic.id);
+    await refreshIssues({ silent: true });
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
+async function deleteSprint(sprint) {
+  if (!canEditIssues.value) return;
+
+  if (!confirm(`Delete sprint "${sprint.name}"?`)) return;
+
+  try {
+    await sprintApi.remove(sprint.id);
+    sprints.value = sprints.value.filter((item) => item.id !== sprint.id);
+    await refreshIssues({ silent: true });
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  }
+}
+
 onMounted(async () => {
   await Promise.all([
     loadBoard(),
@@ -743,6 +908,8 @@ onMounted(async () => {
     }),
     loadProjectLabels({ silent: true }),
     openIssueFromQuery(),
+    loadEpics({ silent: true }),
+    loadSprints({ silent: true }),
   ]);
   socket = createProjectSocket(projectId.value, onSocketMessage, (status) => {
     socketStatus.value = status;
@@ -1077,6 +1244,235 @@ watch(
       </div>
     </section>
     <ProjectDashboard :project-id="projectId" />
+    <section class="mb-6 grid gap-6 xl:grid-cols-2">
+      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-black text-slate-950">Epics</h2>
+            <p class="text-sm text-slate-500">
+              Group related issues into larger goals
+            </p>
+          </div>
+
+          <span
+            class="rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-700"
+          >
+            {{ epics.length }} epic(s)
+          </span>
+        </div>
+
+        <form
+          v-if="canEditIssues"
+          class="mb-4 grid gap-3 md:grid-cols-[1fr_auto_auto]"
+          @submit.prevent="createEpic"
+        >
+          <input
+            v-model="epicForm.name"
+            type="text"
+            placeholder="Epic name"
+            class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-violet-400"
+          />
+
+          <input
+            v-model="epicForm.color"
+            type="color"
+            class="h-12 w-20 cursor-pointer rounded-2xl border border-slate-200 bg-white p-2"
+          />
+
+          <button
+            type="submit"
+            class="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white hover:bg-violet-700 disabled:opacity-60"
+            :disabled="!epicForm.name.trim()"
+          >
+            Add epic
+          </button>
+        </form>
+
+        <textarea
+          v-if="canEditIssues"
+          v-model="epicForm.description"
+          rows="2"
+          placeholder="Epic description..."
+          class="mb-4 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-violet-400"
+        ></textarea>
+
+        <div
+          v-if="epicLoading"
+          class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+        >
+          Loading epics...
+        </div>
+
+        <div v-else class="space-y-3">
+          <div
+            v-for="epic in epics"
+            :key="epic.id"
+            class="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+          >
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-3 w-3 rounded-full"
+                  :style="{ backgroundColor: epic.color }"
+                ></span>
+
+                <p class="truncate text-sm font-black text-slate-900">
+                  {{ epic.name }}
+                </p>
+              </div>
+
+              <p
+                v-if="epic.description"
+                class="mt-1 line-clamp-1 text-xs font-semibold text-slate-400"
+              >
+                {{ epic.description }}
+              </p>
+            </div>
+
+            <button
+              v-if="canEditIssues"
+              type="button"
+              class="rounded-xl border border-rose-200 px-3 py-2 text-xs font-black text-rose-500 hover:bg-rose-50"
+              @click="deleteEpic(epic)"
+            >
+              Delete
+            </button>
+          </div>
+
+          <p
+            v-if="epics.length === 0"
+            class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+          >
+            No epics yet.
+          </p>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-black text-slate-950">Sprints</h2>
+            <p class="text-sm text-slate-500">
+              Plan issues into working cycles
+            </p>
+          </div>
+
+          <span
+            class="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700"
+          >
+            {{ sprints.length }} sprint(s)
+          </span>
+        </div>
+
+        <form
+          v-if="canEditIssues"
+          class="mb-4 grid gap-3 md:grid-cols-2"
+          @submit.prevent="createSprint"
+        >
+          <input
+            v-model="sprintForm.name"
+            type="text"
+            placeholder="Sprint name"
+            class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+          />
+
+          <select
+            v-model="sprintForm.status"
+            class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+          >
+            <option value="PLANNED">PLANNED</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="COMPLETED">COMPLETED</option>
+          </select>
+
+          <input
+            v-model="sprintForm.start_date"
+            type="datetime-local"
+            class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+          />
+
+          <input
+            v-model="sprintForm.end_date"
+            type="datetime-local"
+            class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-blue-400"
+          />
+
+          <textarea
+            v-model="sprintForm.goal"
+            rows="2"
+            placeholder="Sprint goal..."
+            class="md:col-span-2 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400"
+          ></textarea>
+
+          <button
+            type="submit"
+            class="md:col-span-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-60"
+            :disabled="!sprintForm.name.trim()"
+          >
+            Add sprint
+          </button>
+        </form>
+
+        <div
+          v-if="sprintLoading"
+          class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+        >
+          Loading sprints...
+        </div>
+
+        <div v-else class="space-y-3">
+          <div
+            v-for="sprint in sprints"
+            :key="sprint.id"
+            class="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+          >
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span
+                  class="rounded-full px-2 py-1 text-[11px] font-black"
+                  :class="
+                    sprint.status === 'ACTIVE'
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : sprint.status === 'COMPLETED'
+                        ? 'bg-slate-200 text-slate-600'
+                        : 'bg-blue-50 text-blue-700'
+                  "
+                >
+                  {{ sprint.status }}
+                </span>
+
+                <p class="truncate text-sm font-black text-slate-900">
+                  {{ sprint.name }}
+                </p>
+              </div>
+
+              <p
+                v-if="sprint.goal"
+                class="mt-1 line-clamp-1 text-xs font-semibold text-slate-400"
+              >
+                {{ sprint.goal }}
+              </p>
+            </div>
+
+            <button
+              v-if="canEditIssues"
+              type="button"
+              class="rounded-xl border border-rose-200 px-3 py-2 text-xs font-black text-rose-500 hover:bg-rose-50"
+              @click="deleteSprint(sprint)"
+            >
+              Delete
+            </button>
+          </div>
+
+          <p
+            v-if="sprints.length === 0"
+            class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+          >
+            No sprints yet.
+          </p>
+        </div>
+      </div>
+    </section>
     <section
       class="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
     >
@@ -1422,6 +1818,8 @@ watch(
       :issue="selectedIssue"
       :members="members"
       :project-labels="projectLabels"
+      :epics="epics"
+      :sprints="sprints"
       @close="closeIssueModal"
       @changed="onIssueChanged"
       @deleted="onIssueDeleted"
