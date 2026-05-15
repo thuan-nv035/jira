@@ -8,7 +8,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-vue-next";
-import { getInitials } from "../../utils/memberUtils";
+import { getInitials, getAvatarColorClass } from "../../utils/memberUtils";
 
 const props = defineProps({
   project: { type: Object, default: null },
@@ -28,22 +28,6 @@ const emit = defineEmits([
   "dashboard",
   "create-issue",
 ]);
-
-function getAvatarColorClass(index) {
-  const colors = [
-    "bg-blue-600",
-    "bg-violet-600",
-    "bg-emerald-600",
-    "bg-amber-500",
-    "bg-rose-600",
-    "bg-cyan-600",
-    "bg-indigo-600",
-    "bg-fuchsia-600",
-    "bg-slate-700",
-  ];
-
-  return colors[index % colors.length];
-}
 </script>
 
 <template>

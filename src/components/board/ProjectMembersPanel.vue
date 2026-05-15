@@ -1,5 +1,5 @@
 <script setup>
-import { getInitials } from "../../utils/memberUtils";
+import { getInitials, getAvatarColorClass } from "../../utils/memberUtils";
 
 const props = defineProps({
   members: { type: Array, default: () => [] },
@@ -9,21 +9,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update-role", "remove-member"]);
-
-function getAvatarColorClass(index) {
-  const colors = [
-    "bg-blue-600",
-    "bg-violet-600",
-    "bg-emerald-600",
-    "bg-amber-500",
-    "bg-rose-600",
-    "bg-cyan-600",
-    "bg-indigo-600",
-    "bg-fuchsia-600",
-    "bg-slate-700",
-  ];
-  return colors[index % colors.length];
-}
 
 function isOwner(member) {
   return Number(props.project?.owner_id) === Number(member.id);
