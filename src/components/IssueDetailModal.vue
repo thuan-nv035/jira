@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
+  Activity,
+  Clock3,
+  RefreshCcw,
   MessageCircle,
   Save,
   Trash2,
@@ -23,11 +26,12 @@ import {
 } from "lucide-vue-next";
 import ModalShell from "./ModalShell.vue";
 import {
+  activityApi,
   attachmentApi,
+  checklistApi,
   commentApi,
   getErrorMessage,
   issueApi,
-  checklistApi,
   labelApi,
 } from "../services/api";
 import { getUser } from "../utils/storage";
@@ -70,6 +74,12 @@ const checklistSaving = ref(false);
 const newChecklistTitle = ref("");
 const editingChecklistId = ref(null);
 const editingChecklistTitle = ref("");
+const issueActivities = ref([]);
+const issueActivityLoading = ref(false);
+const issueActivityLoadingMore = ref(false);
+const issueActivityHasMore = ref(true);
+
+const ISSUE_ACTIVITY_LIMIT = 10;
 const form = reactive({
   title: props.issue.title,
   description: props.issue.description || "",
@@ -741,23 +751,150 @@ function getInitials(name) {
   return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
 }
 
+async function loadIssueActivities(options = {}) {
+  const reset = options.reset ?? false;
+  const silent = options.silent ?? false;
+
+  if (!props.issue?.id) return;
+
+  if (issueActivityLoading.value || issueActivityLoadingMore.value) return;
+
+  if (!reset && !issueActivityHasMore.value) return;
+
+  const offset = reset ? 0 : issueActivities.value.length;
+
+  if (reset) {
+    issueActivityHasMore.value = true;
+
+    if (!silent) {
+      issueActivityLoading.value = true;
+    }
+  } else {
+    issueActivityLoadingMore.value = true;
+  }
+
+  try {
+    const data = await activityApi.listIssueLog(props.issue.id, {
+      limit: ISSUE_ACTIVITY_LIMIT,
+      offset,
+    });
+
+    if (reset) {
+      issueActivities.value = data;
+    } else {
+      const currentIds = new Set(issueActivities.value.map((item) => item.id));
+      const newItems = data.filter((item) => !currentIds.has(item.id));
+
+      issueActivities.value = [...issueActivities.value, ...newItems];
+    }
+
+    issueActivityHasMore.value = data.length === ISSUE_ACTIVITY_LIMIT;
+  } catch (err) {
+    error.value = getErrorMessage(err);
+  } finally {
+    issueActivityLoading.value = false;
+    issueActivityLoadingMore.value = false;
+  }
+}
+
+function onIssueActivityScroll(event) {
+  const el = event.target;
+
+  const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+
+  if (nearBottom) {
+    loadIssueActivities({
+      reset: false,
+      silent: true,
+    });
+  }
+}
+
+function onIssueActivityRealtime(event) {
+  const issueId = Number(event.detail?.issue_id);
+
+  if (!issueId || issueId === Number(props.issue.id)) {
+    loadIssueActivities({
+      reset: true,
+      silent: true,
+    });
+  }
+}
+
+function formatActivityTime(value) {
+  if (!value) return "";
+
+  return new Date(value).toLocaleString();
+}
+
+function getActivityLabel(action) {
+  const labels = {
+    ISSUE_CREATED: "Created issue",
+    ISSUE_UPDATED: "Updated issue",
+    ISSUE_MOVED: "Moved issue",
+    CHECKLIST_CREATED: "Added checklist",
+    CHECKLIST_UPDATED: "Updated checklist",
+    CHECKLIST_DELETED: "Deleted checklist",
+    LABEL_CREATED: "Created label",
+    LABEL_UPDATED: "Updated label",
+    LABEL_DELETED: "Deleted label",
+    ISSUE_LABEL_ADDED: "Added label",
+    ISSUE_LABEL_REMOVED: "Removed label",
+    COMMENT_CREATED: "Commented",
+    ATTACHMENT_UPLOADED: "Uploaded file",
+  };
+
+  return labels[action] || action || "Activity";
+}
+
+function getActivityClass(action) {
+  const classes = {
+    ISSUE_CREATED: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    ISSUE_UPDATED: "bg-blue-50 text-blue-700 border-blue-100",
+    ISSUE_MOVED: "bg-amber-50 text-amber-700 border-amber-100",
+    CHECKLIST_CREATED: "bg-violet-50 text-violet-700 border-violet-100",
+    CHECKLIST_UPDATED: "bg-violet-50 text-violet-700 border-violet-100",
+    CHECKLIST_DELETED: "bg-rose-50 text-rose-700 border-rose-100",
+    ISSUE_LABEL_ADDED: "bg-cyan-50 text-cyan-700 border-cyan-100",
+    ISSUE_LABEL_REMOVED: "bg-orange-50 text-orange-700 border-orange-100",
+    ATTACHMENT_UPLOADED: "bg-slate-50 text-slate-700 border-slate-100",
+  };
+
+  return classes[action] || "bg-slate-50 text-slate-700 border-slate-100";
+}
+
+function getChangedFields(log) {
+  if (!log?.new_value) return "";
+
+  const fields = Object.keys(log.new_value).filter(
+    (key) => key !== "id" && key !== "code",
+  );
+
+  if (fields.length === 0) return "";
+
+  return fields.join(", ");
+}
+
 onMounted(async () => {
   await Promise.all([
     loadComments(),
     loadAttachments(),
     loadChecklists(),
     loadIssueLabels(),
+    loadIssueActivities({ reset: true, silent: true }),
   ]);
 
   window.addEventListener("jira-attachment-refresh", onAttachmentRealtime);
   window.addEventListener("jira-checklist-refresh", onChecklistRealtime);
   window.addEventListener("jira-label-refresh", onLabelRealtime);
+  window.addEventListener("jira-activity-refresh", onIssueActivityRealtime);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("jira-attachment-refresh", onAttachmentRealtime);
   window.removeEventListener("jira-checklist-refresh", onChecklistRealtime);
   window.addEventListener("jira-label-refresh", onLabelRealtime);
+  window.removeEventListener("jira-activity-refresh", onIssueActivityRealtime);
 });
 </script>
 
@@ -1220,6 +1357,117 @@ onBeforeUnmount(() => {
             >
               No comments yet.
             </p>
+          </div>
+        </section>
+
+        <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <Activity class="h-5 w-5 text-slate-500" />
+              <h3 class="font-black text-slate-950">Activity</h3>
+            </div>
+
+            <button
+              type="button"
+              class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-100"
+              :disabled="issueActivityLoading"
+              @click="loadIssueActivities({ reset: true })"
+            >
+              <RefreshCcw class="mr-1 inline h-3.5 w-3.5" />
+              Refresh
+            </button>
+          </div>
+
+          <div
+            v-if="issueActivityLoading"
+            class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+          >
+            Loading activity...
+          </div>
+
+          <div
+            v-else-if="issueActivities.length === 0"
+            class="rounded-2xl bg-white p-4 text-sm text-slate-500"
+          >
+            No activity yet.
+          </div>
+
+          <div
+            v-else
+            class="max-h-96 space-y-3 overflow-y-auto pr-1"
+            @scroll="onIssueActivityScroll"
+          >
+            <div
+              v-for="log in issueActivities"
+              :key="log.id"
+              class="rounded-2xl bg-white p-4 shadow-sm"
+            >
+              <div class="flex items-start gap-3">
+                <div
+                  class="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white"
+                >
+                  <Clock3 class="h-4 w-4" />
+                </div>
+
+                <div class="min-w-0 flex-1">
+                  <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <span
+                      class="rounded-full border px-3 py-1 text-xs font-black"
+                      :class="getActivityClass(log.action)"
+                    >
+                      {{ getActivityLabel(log.action) }}
+                    </span>
+
+                    <span class="text-xs font-semibold text-slate-400">
+                      {{ formatActivityTime(log.created_at) }}
+                    </span>
+                  </div>
+
+                  <p class="text-sm font-bold text-slate-900">
+                    {{ log.message }}
+                  </p>
+
+                  <p
+                    v-if="getChangedFields(log)"
+                    class="mt-1 text-xs font-semibold text-slate-500"
+                  >
+                    Changed:
+                    <span class="text-slate-700">
+                      {{ getChangedFields(log) }}
+                    </span>
+                  </p>
+
+                  <div
+                    v-if="log.actor"
+                    class="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1.5"
+                  >
+                    <div
+                      class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-[10px] font-black text-white"
+                    >
+                      {{ getInitials(log.actor.full_name) }}
+                    </div>
+
+                    <span class="text-xs font-bold text-slate-600">
+                      {{ log.actor.full_name }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="issueActivityLoadingMore"
+              class="rounded-2xl bg-white p-4 text-center text-sm font-semibold text-slate-500"
+            >
+              Loading more activity...
+            </div>
+
+            <div
+              v-else-if="!issueActivityHasMore && issueActivities.length > 0"
+              class="rounded-2xl bg-white p-4 text-center text-xs font-bold uppercase tracking-wide text-slate-400"
+            >
+              No more activity
+            </div>
           </div>
         </section>
       </div>

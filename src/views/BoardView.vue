@@ -99,7 +99,6 @@ const hiddenProjectMemberCount = computed(() => {
 function normalizeMember(member) {
   if (!member) return null;
 
-  // Trường hợp API trả về { user: {...} }
   if (member.user) {
     return {
       id: member.user.id,
@@ -110,7 +109,6 @@ function normalizeMember(member) {
     };
   }
 
-  // Trường hợp API trả thẳng { id, full_name, email }
   return {
     id: member.id || member.user_id,
     full_name: member.full_name || member.email || "User",
@@ -246,7 +244,11 @@ async function onDropIssue(column) {
 
 function onSocketMessage(payload) {
   lastEvent.value = payload;
-
+  if (payload.event === "activity.created") {
+    window.dispatchEvent(
+      new CustomEvent("jira-activity-refresh", { detail: payload.data }),
+    );
+  }
   if (
     ["label.created", "label.updated", "label.deleted"].includes(payload.event)
   ) {
@@ -300,6 +302,10 @@ function onSocketMessage(payload) {
       reset: true,
       silent: true,
     });
+
+    window.dispatchEvent(
+      new CustomEvent("jira-activity-refresh", { detail: payload.data }),
+    );
   }
 
   if (payload.event === "notification.created") {
@@ -721,8 +727,8 @@ function closeIssueModal() {
     path: route.path,
     query: {
       ...route.query,
-      issueId: undefined
-    }
+      issueId: undefined,
+    },
   });
 }
 
@@ -736,7 +742,7 @@ onMounted(async () => {
       silent: true,
     }),
     loadProjectLabels({ silent: true }),
-    openIssueFromQuery()
+    openIssueFromQuery(),
   ]);
   socket = createProjectSocket(projectId.value, onSocketMessage, (status) => {
     socketStatus.value = status;
@@ -747,7 +753,7 @@ watch(
   () => route.query.issueId,
   () => {
     openIssueFromQuery();
-  }
+  },
 );
 </script>
 
