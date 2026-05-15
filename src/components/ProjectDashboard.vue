@@ -96,12 +96,6 @@ async function loadDashboard(options = {}) {
   }
 }
 
-function formatActivityTime(value) {
-  if (!value) return "";
-
-  return new Date(value).toLocaleString();
-}
-
 function getPriorityClass(priority) {
   const value = String(priority || "").toUpperCase();
 

@@ -22,11 +22,26 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      clearAuth();
+    const status = error?.response?.status;
+
+    if (status === 401) {
+      removeToken();
+
+      window.dispatchEvent(
+        new CustomEvent("jira-auth-expired", {
+          detail: {
+            message: "Your session has expired. Please login again."
+          }
+        })
+      );
+
+      if (router.currentRoute.value.path !== "/login") {
+        router.push("/login");
+      }
     }
+
     return Promise.reject(error);
-  },
+  }
 );
 
 function getErrorMessage(error) {

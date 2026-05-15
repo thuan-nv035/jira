@@ -45,13 +45,23 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const isLoggedIn = Boolean(getToken());
+
   if (to.meta.requiresAuth && !isLoggedIn) {
-    return { name: "login" };
+    return {
+      path: "/login",
+      query: {
+        redirect: to.fullPath
+      }
+    };
   }
-  if (to.meta.guest && isLoggedIn) {
-    return { name: "projects" };
+
+  if (to.meta.guestOnly && isLoggedIn) {
+    return "/projects";
   }
+
   return true;
 });
+
+export default router;
 
 export default router;

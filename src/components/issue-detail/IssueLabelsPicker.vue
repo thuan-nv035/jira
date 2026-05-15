@@ -1,13 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getErrorMessage, labelApi } from "../../services/api";
-
+import { useToast } from "../../composables/useToast";
 const props = defineProps({
   issue: { type: Object, required: true },
   projectLabels: { type: Array, default: () => [] },
   canEdit: { type: Boolean, default: true },
 });
-
+const toast = useToast();
 const issueLabels = ref([]);
 const loading = ref(false);
 const error = ref("");
@@ -37,6 +37,7 @@ async function addLabel(labelId) {
     issueLabels.value = await labelApi.addToIssue(props.issue.id, labelId);
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   }
 }
 
@@ -48,6 +49,7 @@ async function removeLabel(label) {
     issueLabels.value = issueLabels.value.filter((item) => Number(item.id) !== Number(label.id));
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   }
 }
 

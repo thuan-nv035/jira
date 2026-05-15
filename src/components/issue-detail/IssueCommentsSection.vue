@@ -4,13 +4,13 @@ import { MessageCircle } from "lucide-vue-next";
 import { commentApi, getErrorMessage } from "../../services/api";
 import { getInitials, normalizeMember } from "../../utils/memberUtils";
 import { highlightMentions, extractMentionedUserIdsFromText as buildMentionedUserIds } from "../../utils/mentionUtils";
-
+import { useToast } from "../../composables/useToast";
 const props = defineProps({
   issue: { type: Object, required: true },
   members: { type: Array, default: () => [] },
   canEdit: { type: Boolean, default: true },
 });
-
+const toast = useToast();
 const comments = ref([]);
 const commentText = ref("");
 const loading = ref(false);
@@ -142,6 +142,7 @@ async function addComment() {
     await loadComments();
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   } finally {
     loading.value = false;
   }

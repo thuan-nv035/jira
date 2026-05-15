@@ -3,7 +3,8 @@ import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { KanbanSquare } from "lucide-vue-next";
 import { authApi, getErrorMessage } from "../services/api";
-
+import { useToast } from "../composables/useToast";
+const toast = useToast();
 const router = useRouter();
 const loading = ref(false);
 const error = ref("");
@@ -21,6 +22,7 @@ async function submit() {
     router.push({ name: "projects" });
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   } finally {
     loading.value = false;
   }

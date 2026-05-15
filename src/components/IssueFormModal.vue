@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import ModalShell from "./ModalShell.vue";
 import { getErrorMessage, issueApi } from "../services/api";
-
+import { useToast } from "../composables/useToast";
 const props = defineProps({
   projectId: { type: [String, Number], required: true },
   column: { type: Object, default: null },
@@ -10,7 +10,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close", "created"]);
-
+const toast = useToast();
 const loading = ref(false);
 const error = ref("");
 const form = reactive({
@@ -55,6 +55,7 @@ async function submit() {
     emit("created", issue);
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   } finally {
     loading.value = false;
   }

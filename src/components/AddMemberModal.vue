@@ -2,7 +2,8 @@
 import { reactive, ref } from "vue";
 import ModalShell from "./ModalShell.vue";
 import { getErrorMessage, projectApi } from "../services/api";
-
+import { useToast } from "../composables/useToast";
+const toast = useToast();
 const props = defineProps({
   projectId: { type: [String, Number], required: true }
 });
@@ -24,6 +25,7 @@ async function submit() {
     emit("added", member);
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   } finally {
     loading.value = false;
   }

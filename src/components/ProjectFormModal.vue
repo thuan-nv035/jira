@@ -2,9 +2,9 @@
 import { reactive, ref } from "vue";
 import ModalShell from "./ModalShell.vue";
 import { getErrorMessage, projectApi } from "../services/api";
-
+import { useToast } from "../composables/useToast";
 const emit = defineEmits(["close", "created"]);
-
+const toast = useToast();
 const loading = ref(false);
 const error = ref("");
 const form = reactive({
@@ -29,6 +29,7 @@ async function submit() {
     emit("created", project);
   } catch (err) {
     error.value = getErrorMessage(err);
+    toast.error(error.value);
   } finally {
     loading.value = false;
   }
