@@ -11,6 +11,7 @@ import {
   UsersRound
 } from "lucide-vue-next";
 import { dashboardApi, getErrorMessage } from "../services/api";
+import { getInitials } from "../utils/memberUtils";
 
 const props = defineProps({
   projectId: {
@@ -128,18 +129,6 @@ function getStatusBarClass(index) {
 function getAssigneeName(item) {
   if (!item.assignee_id) return "Unassigned";
   return item.full_name || item.email || "Unknown user";
-}
-
-function getInitials(name) {
-  if (!name) return "?";
-
-  const words = name.trim().split(/\s+/);
-
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
 }
 
 function onDashboardRefresh() {

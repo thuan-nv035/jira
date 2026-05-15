@@ -36,7 +36,12 @@ import {
   labelApi,
   sprintApi,
 } from "../services/api";
-import { getUser } from "../utils/storage";
+
+import { normalizeMember, getInitials } from "../utils/memberUtils";
+import { toDatetimeLocal, fromDatetimeLocal, formatDateTime as formatActivityTime } from "../utils/dateUtils";
+import { getActivityLabel, getActivityClass, getChangedFields } from "../utils/activityUtils";
+import { canPreviewAttachment as canPreview, formatFileSize } from "../utils/attachmentUtils";
+import { highlightMentions, extractMentionedUserIdsFromText as buildMentionedUserIds } from "../utils/mentionUtils";
 
 const props = defineProps({
   projectId: { type: [String, Number], required: true },
@@ -52,7 +57,6 @@ const emit = defineEmits(["close", "changed", "deleted"]);
 
 const issueLabels = ref([]);
 const labelLoading = ref(false);
-const currentUser = getUser();
 const loading = ref(false);
 const deleting = ref(false);
 const error = ref("");
@@ -321,7 +325,11 @@ async function addComment() {
   try {
     await commentApi.create(props.issue.id, {
       body: commentText.value.trim(),
-      mentioned_user_ids: extractMentionedUserIdsFromText(),
+      mentioned_user_ids: buildMentionedUserIds(
+        commentText.value,
+        mentionedUserIds.value,
+        mentionableMembers.value,
+      ),
     });
     commentText.value = "";
     mentionedUserIds.value = [];
@@ -414,16 +422,6 @@ async function handleFileDrop(event) {
   await uploadFiles(files);
 }
 
-function canPreview(attachment) {
-  const type = attachment.content_type || "";
-
-  return (
-    type.startsWith("image/") ||
-    type === "application/pdf" ||
-    type.startsWith("text/")
-  );
-}
-
 async function previewAttachment(attachment) {
   try {
     const blob = await attachmentApi.preview(props.issue.id, attachment.id);
@@ -468,13 +466,6 @@ async function deleteAttachment(attachment) {
   } catch (err) {
     error.value = getErrorMessage(err);
   }
-}
-
-function formatFileSize(bytes) {
-  if (!bytes) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function getAttachmentIcon(attachment) {
@@ -527,23 +518,6 @@ function onAttachmentRealtime(event) {
   }
 }
 
-function toDatetimeLocal(value) {
-  if (!value) return "";
-
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset();
-
-  const localDate = new Date(date.getTime() - offset * 60 * 1000);
-
-  return localDate.toISOString().slice(0, 16);
-}
-
-function fromDatetimeLocal(value) {
-  if (!value) return null;
-
-  return new Date(value).toISOString();
-}
-
 const checklistTotal = computed(() => checklists.value.length);
 
 const checklistDone = computed(() => {
@@ -562,35 +536,6 @@ const reporter = computed(() => {
     .map(normalizeMember)
     .find((member) => Number(member.id) === Number(props.issue.reporter_id));
 });
-
-function normalizeMember(member) {
-  if (!member) return null;
-
-  if (member.user) {
-    return {
-      id: member.user.id,
-      full_name: member.user.full_name || member.user.email || "User",
-      email: member.user.email || "",
-      avatar_url: member.user.avatar_url || "",
-    };
-  }
-
-  return {
-    id: member.id || member.user_id,
-    full_name: member.full_name || member.email || "User",
-    email: member.email || "",
-    avatar_url: member.avatar_url || "",
-  };
-}
-
-function highlightMentions(text) {
-  if (!text) return "";
-
-  return text.replace(
-    /@([\p{L}\p{N}_\s.-]+)/gu,
-    '<span class="font-black text-blue-600">@$1</span>',
-  );
-}
 
 const mentionableMembers = computed(() => {
   return props.members.map(normalizeMember).filter(Boolean);
@@ -709,33 +654,6 @@ function handleCommentKeydown(event) {
   }
 }
 
-function extractMentionedUserIdsFromText() {
-  const text = commentText.value.toLowerCase();
-  const ids = new Set(mentionedUserIds.value.map(Number));
-
-  mentionableMembers.value.forEach((member) => {
-    const nameMention = `@${member.full_name}`.toLowerCase();
-
-    if (text.includes(nameMention)) {
-      ids.add(Number(member.id));
-    }
-  });
-
-  return Array.from(ids);
-}
-
-function getInitials(name) {
-  if (!name) return "?";
-
-  const words = name.trim().split(/\s+/);
-
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
-}
-
 async function loadIssueActivities(options = {}) {
   const reset = options.reset ?? false;
   const silent = options.silent ?? false;
@@ -804,60 +722,6 @@ function onIssueActivityRealtime(event) {
       silent: true,
     });
   }
-}
-
-function formatActivityTime(value) {
-  if (!value) return "";
-
-  return new Date(value).toLocaleString();
-}
-
-function getActivityLabel(action) {
-  const labels = {
-    ISSUE_CREATED: "Created issue",
-    ISSUE_UPDATED: "Updated issue",
-    ISSUE_MOVED: "Moved issue",
-    CHECKLIST_CREATED: "Added checklist",
-    CHECKLIST_UPDATED: "Updated checklist",
-    CHECKLIST_DELETED: "Deleted checklist",
-    LABEL_CREATED: "Created label",
-    LABEL_UPDATED: "Updated label",
-    LABEL_DELETED: "Deleted label",
-    ISSUE_LABEL_ADDED: "Added label",
-    ISSUE_LABEL_REMOVED: "Removed label",
-    COMMENT_CREATED: "Commented",
-    ATTACHMENT_UPLOADED: "Uploaded file",
-  };
-
-  return labels[action] || action || "Activity";
-}
-
-function getActivityClass(action) {
-  const classes = {
-    ISSUE_CREATED: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    ISSUE_UPDATED: "bg-blue-50 text-blue-700 border-blue-100",
-    ISSUE_MOVED: "bg-amber-50 text-amber-700 border-amber-100",
-    CHECKLIST_CREATED: "bg-violet-50 text-violet-700 border-violet-100",
-    CHECKLIST_UPDATED: "bg-violet-50 text-violet-700 border-violet-100",
-    CHECKLIST_DELETED: "bg-rose-50 text-rose-700 border-rose-100",
-    ISSUE_LABEL_ADDED: "bg-cyan-50 text-cyan-700 border-cyan-100",
-    ISSUE_LABEL_REMOVED: "bg-orange-50 text-orange-700 border-orange-100",
-    ATTACHMENT_UPLOADED: "bg-slate-50 text-slate-700 border-slate-100",
-  };
-
-  return classes[action] || "bg-slate-50 text-slate-700 border-slate-100";
-}
-
-function getChangedFields(log) {
-  if (!log?.new_value) return "";
-
-  const fields = Object.keys(log.new_value).filter(
-    (key) => key !== "id" && key !== "code",
-  );
-
-  if (fields.length === 0) return "";
-
-  return fields.join(", ");
 }
 
 async function updateIssueEpic() {

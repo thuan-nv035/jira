@@ -36,6 +36,10 @@ import {
 } from "../services/api";
 import { createProjectSocket } from "../services/socket";
 
+import { normalizeMember, getInitials, getAvatarColorClass } from "../utils/memberUtils";
+import { formatDateTime as formatLogTime } from "../utils/dateUtils";
+import { getActivityLabel, getActivityClass, getChangedFields } from "../utils/activityUtils";
+
 const route = useRoute();
 const router = useRouter();
 const projectId = computed(() => Number(route.params.id));
@@ -118,56 +122,6 @@ const hiddenProjectMemberCount = computed(() => {
   return Math.max(projectMemberAvatars.value.length - MAX_VISIBLE_AVATARS, 0);
 });
 
-function normalizeMember(member) {
-  if (!member) return null;
-
-  if (member.user) {
-    return {
-      id: member.user.id,
-      full_name: member.user.full_name || member.user.email || "User",
-      email: member.user.email || "",
-      avatar_url: member.user.avatar_url || "",
-      role: member.role || "",
-    };
-  }
-
-  return {
-    id: member.id || member.user_id,
-    full_name: member.full_name || member.email || "User",
-    email: member.email || "",
-    avatar_url: member.avatar_url || "",
-    role: member.role || "",
-  };
-}
-
-function getInitials(name) {
-  if (!name) return "?";
-
-  const words = name.trim().split(/\s+/);
-
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
-}
-
-function getAvatarColorClass(index) {
-  const colors = [
-    "bg-blue-600",
-    "bg-violet-600",
-    "bg-emerald-600",
-    "bg-amber-500",
-    "bg-rose-600",
-    "bg-cyan-600",
-    "bg-indigo-600",
-    "bg-fuchsia-600",
-    "bg-slate-700",
-  ];
-
-  return colors[index % colors.length];
-}
-
 const issueTotal = computed(() => issues.value.length);
 const doneTotal = computed(() => {
   const doneColumn = columns.value.find((col) =>
@@ -193,17 +147,13 @@ async function loadBoard(options = {}) {
     error.value = "";
   }
   try {
-    const [projectData, columnData, memberData] = await Promise.all([
+    const [projectData, columnData] = await Promise.all([
       projectApi.get(projectId.value),
       columnApi.list(projectId.value),
-      // issueApi.list(projectId.value),
-      // projectApi.members(projectId.value),
     ]);
     project.value = projectData;
     columns.value = columnData;
     await refreshIssues({ silent: true });
-    // issues.value = issueData;
-    // members.value = memberData;
   } catch (err) {
     error.value = getErrorMessage(err);
   } finally {
@@ -569,42 +519,6 @@ async function loadProjectLogs(options = {}) {
     projectLogLoading.value = false;
     projectLogLoadingMore.value = false;
   }
-}
-
-function formatLogTime(dateString) {
-  if (!dateString) return "";
-
-  return new Date(dateString).toLocaleString();
-}
-
-function getActivityLabel(action) {
-  const labels = {
-    ISSUE_CREATED: "Created issue",
-    ISSUE_UPDATED: "Updated issue",
-    ISSUE_MOVED: "Moved issue",
-  };
-
-  return labels[action] || action;
-}
-
-function getActivityClass(action) {
-  const classes = {
-    ISSUE_CREATED: "bg-emerald-50 text-emerald-700 border-emerald-100",
-    ISSUE_UPDATED: "bg-blue-50 text-blue-700 border-blue-100",
-    ISSUE_MOVED: "bg-amber-50 text-amber-700 border-amber-100",
-  };
-
-  return classes[action] || "bg-slate-50 text-slate-700 border-slate-100";
-}
-
-function getChangedFields(log) {
-  if (!log?.new_value) return "";
-
-  const fields = Object.keys(log.new_value);
-
-  if (fields.length === 0) return "";
-
-  return fields.join(", ");
 }
 
 function onProjectLogScroll(event) {

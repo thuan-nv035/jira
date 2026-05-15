@@ -9,6 +9,8 @@ import {
   ListChecks,
 } from "lucide-vue-next";
 import { computed } from "vue";
+import { getInitials, normalizeMember, getAvatarColorClass } from "../utils/memberUtils";
+
 const props = defineProps({
   issue: { type: Object, required: true },
   members: { type: Array, default: () => [] },
@@ -84,56 +86,6 @@ const assignee = computed(() => {
     .find((member) => Number(member.id) === Number(props.issue.assignee_id));
 });
 
-function normalizeMember(member) {
-  if (!member) return null;
-
-  if (member.user) {
-    return {
-      id: member.user.id,
-      full_name: member.user.full_name || member.user.email || "User",
-      email: member.user.email || "",
-      avatar_url: member.user.avatar_url || "",
-    };
-  }
-
-  return {
-    id: member.id || member.user_id,
-    full_name: member.full_name || member.email || "User",
-    email: member.email || "",
-    avatar_url: member.avatar_url || "",
-  };
-}
-
-function getInitials(name) {
-  if (!name) return "?";
-
-  const words = name.trim().split(/\s+/);
-
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
-}
-
-function getAvatarColor(name) {
-  const colors = [
-    "bg-blue-600",
-    "bg-violet-600",
-    "bg-emerald-600",
-    "bg-amber-500",
-    "bg-rose-600",
-    "bg-cyan-600",
-    "bg-indigo-600",
-    "bg-fuchsia-600",
-    "bg-slate-700",
-  ];
-
-  const text = name || "User";
-  const index = text.charCodeAt(0) % colors.length;
-
-  return colors[index];
-}
 </script>
 
 <template>
@@ -273,7 +225,7 @@ function getAvatarColor(name) {
           v-if="assignee"
           class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border-2 border-white text-xs font-black text-white shadow-sm ring-1 ring-slate-200 transition hover:scale-110"
           :class="
-            !assignee.avatar_url ? getAvatarColor(assignee.full_name) : ''
+            !assignee.avatar_url ? getAvatarColorClass(assignee.full_name) : ''
           "
         >
           <img
