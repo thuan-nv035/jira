@@ -1,13 +1,14 @@
 <script setup>
 import { computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { KanbanSquare, LogOut, Search } from "lucide-vue-next";
 import NotificationBell from "./NotificationBell.vue";
 import { clearAuth, getUser } from "../utils/storage";
 
 const router = useRouter();
+const route = useRoute()
 const user = computed(() => getUser());
-
+const projectId = computed(() => route.params.id)
 function logout() {
   clearAuth();
   router.push({ name: "login" });
@@ -42,6 +43,12 @@ function logout() {
         </div> -->
 
         <div class="flex items-center gap-3">
+          <router-link
+            :to="`/projects/${projectId}/backlog`"
+            class="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-600 transition hover:bg-slate-100"
+          >
+            Backlog
+          </router-link>
           <router-link
             to="/my-tasks"
             class="rounded-2xl px-4 py-2 text-sm font-black text-slate-600 hover:bg-slate-100"

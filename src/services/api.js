@@ -30,9 +30,9 @@ api.interceptors.response.use(
       window.dispatchEvent(
         new CustomEvent("jira-auth-expired", {
           detail: {
-            message: "Your session has expired. Please login again."
-          }
-        })
+            message: "Your session has expired. Please login again.",
+          },
+        }),
       );
 
       if (router.currentRoute.value.path !== "/login") {
@@ -41,7 +41,7 @@ api.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 function getErrorMessage(error) {
@@ -438,11 +438,11 @@ export const epicApi = {
 
   async updateIssueEpic(issueId, epicId) {
     const { data } = await api.patch(`/issues/${issueId}/epic`, {
-      epic_id: epicId
+      epic_id: epicId,
     });
 
     return data;
-  }
+  },
 };
 
 export const sprintApi = {
@@ -467,11 +467,21 @@ export const sprintApi = {
 
   async updateIssueSprint(issueId, sprintId) {
     const { data } = await api.patch(`/issues/${issueId}/sprint`, {
-      sprint_id: sprintId
+      sprint_id: sprintId,
     });
 
     return data;
-  }
+  },
+
+  async start(sprintId) {
+    const { data } = await api.patch(`/sprints/${sprintId}/start`);
+    return data;
+  },
+
+  async complete(sprintId) {
+    const { data } = await api.patch(`/sprints/${sprintId}/complete`);
+    return data;
+  },
 };
 
 export const meApi = {
@@ -485,11 +495,32 @@ export const meApi = {
     });
 
     const { data } = await api.get("/me/issues", {
-      params: cleanParams
+      params: cleanParams,
     });
 
     return data;
-  }
+  },
+};
+
+export const backlogApi = {
+  async listBacklog(projectId, params = {}) {
+    const { data } = await api.get(`/projects/${projectId}/backlog`, {
+      params,
+    });
+
+    return data;
+  },
+
+  async listSprintIssues(projectId, sprintId, params = {}) {
+    const { data } = await api.get(
+      `/projects/${projectId}/sprints/${sprintId}/issues`,
+      {
+        params,
+      },
+    );
+
+    return data;
+  },
 };
 
 export { api, getErrorMessage };

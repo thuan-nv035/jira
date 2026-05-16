@@ -40,9 +40,13 @@ const routes = [
     path: "/my-tasks",
     name: "my-tasks",
     component: () => import("../views/MyTasksView.vue"),
-    meta: {
-      requiresAuth: true,
-    },
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/projects/:id/backlog",
+    name: "project-backlog",
+    component: () => import("../views/BacklogView.vue"),
+    meta: { requiresAuth: true },
   },
 ];
 
