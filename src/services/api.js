@@ -474,4 +474,22 @@ export const sprintApi = {
   }
 };
 
+export const meApi = {
+  async issues(params = {}) {
+    const cleanParams = {};
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== "" && value !== null && value !== undefined) {
+        cleanParams[key] = value;
+      }
+    });
+
+    const { data } = await api.get("/me/issues", {
+      params: cleanParams
+    });
+
+    return data;
+  }
+};
+
 export { api, getErrorMessage };

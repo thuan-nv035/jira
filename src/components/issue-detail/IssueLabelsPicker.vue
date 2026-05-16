@@ -1,83 +1,70 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { getErrorMessage, labelApi } from "../../services/api";
-import { useToast } from "../../composables/useToast";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { useIssueLabels } from "../../composables/useIssueLabels";
+
 const props = defineProps({
-  issue: { type: Object, required: true },
-  projectLabels: { type: Array, default: () => [] },
-  canEdit: { type: Boolean, default: true },
+  issue: {
+    type: Object,
+    required: true,
+  },
+  projectLabels: {
+    type: Array,
+    default: () => [],
+  },
+  canEdit: {
+    type: Boolean,
+    default: true,
+  },
 });
-const toast = useToast();
-const issueLabels = ref([]);
-const loading = ref(false);
+
 const error = ref("");
 
-const availableLabels = computed(() => {
-  const selectedIds = new Set(issueLabels.value.map((label) => Number(label.id)));
-  return props.projectLabels.filter((label) => !selectedIds.has(Number(label.id)));
+const {
+  issueLabels,
+  labelLoading,
+  availableLabels,
+  loadIssueLabels,
+  addLabelToIssue,
+  removeLabelFromIssue,
+  onLabelRealtime,
+} = useIssueLabels({
+  props,
+  error,
 });
 
-async function loadIssueLabels() {
-  loading.value = true;
-  error.value = "";
-
-  try {
-    issueLabels.value = await labelApi.listIssueLabels(props.issue.id);
-  } catch (err) {
-    error.value = getErrorMessage(err);
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function addLabel(labelId) {
-  if (!labelId || !props.canEdit) return;
-
-  try {
-    issueLabels.value = await labelApi.addToIssue(props.issue.id, labelId);
-  } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-  }
-}
-
-async function removeLabel(label) {
-  if (!props.canEdit) return;
-
-  try {
-    await labelApi.removeFromIssue(props.issue.id, label.id);
-    issueLabels.value = issueLabels.value.filter((item) => Number(item.id) !== Number(label.id));
-  } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-  }
-}
-
-function onRealtime(event) {
-  const issueId = Number(event.detail?.issue_id);
-  if (!issueId || issueId === Number(props.issue.id)) loadIssueLabels();
+function handleAddLabel(event) {
+  addLabelToIssue(event.target.value);
+  event.target.value = "";
 }
 
 onMounted(() => {
   loadIssueLabels();
-  window.addEventListener("jira-label-refresh", onRealtime);
+  window.addEventListener("jira-label-refresh", onLabelRealtime);
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("jira-label-refresh", onRealtime);
+  window.removeEventListener("jira-label-refresh", onLabelRealtime);
 });
 </script>
 
 <template>
   <div>
-    <label class="mb-2 block text-sm font-bold text-slate-600">Labels</label>
+    <label class="mb-2 block text-sm font-bold text-slate-600">
+      Labels
+    </label>
 
-    <div v-if="loading" class="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500">
+    <div
+      v-if="labelLoading"
+      class="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500"
+    >
       Loading labels...
     </div>
 
     <div v-else class="space-y-3">
-      <p v-if="error" class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+      <p
+        v-if="error"
+        class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700"
+      >
         {{ error }}
       </p>
 
@@ -99,13 +86,16 @@ onBeforeUnmount(() => {
             type="button"
             class="rounded-full px-1 opacity-70 transition hover:opacity-100"
             title="Remove label"
-            @click="removeLabel(label)"
+            @click="removeLabelFromIssue(label)"
           >
             ×
           </button>
         </span>
 
-        <span v-if="issueLabels.length === 0" class="text-sm font-semibold text-slate-400">
+        <span
+          v-if="issueLabels.length === 0"
+          class="text-sm font-semibold text-slate-400"
+        >
           No labels
         </span>
       </div>
@@ -113,10 +103,15 @@ onBeforeUnmount(() => {
       <select
         v-if="canEdit"
         class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400"
-        @change="addLabel($event.target.value); $event.target.value = ''"
+        @change="handleAddLabel"
       >
         <option value="">Add label...</option>
-        <option v-for="label in availableLabels" :key="label.id" :value="label.id">
+
+        <option
+          v-for="label in availableLabels"
+          :key="label.id"
+          :value="label.id"
+        >
           {{ label.name }}
         </option>
       </select>

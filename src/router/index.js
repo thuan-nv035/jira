@@ -4,43 +4,51 @@ import { getToken } from "../utils/storage";
 const routes = [
   {
     path: "/",
-    redirect: "/projects"
+    redirect: "/projects",
   },
   {
     path: "/login",
     name: "login",
     component: () => import("../views/LoginView.vue"),
-    meta: { guest: true }
+    meta: { guest: true },
   },
   {
     path: "/register",
     name: "register",
     component: () => import("../views/RegisterView.vue"),
-    meta: { guest: true }
+    meta: { guest: true },
   },
   {
     path: "/projects",
     name: "projects",
     component: () => import("../views/DashboardView.vue"),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true },
   },
   {
     path: "/projects/:id/board",
     name: "board",
     component: () => import("../views/BoardView.vue"),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true },
   },
   {
     path: "/notifications",
     name: "notifications",
     component: () => import("../views/NotificationsView.vue"),
-    meta: { requiresAuth: true }
-  }
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/my-tasks",
+    name: "my-tasks",
+    component: () => import("../views/MyTasksView.vue"),
+    meta: {
+      requiresAuth: true,
+    },
+  },
 ];
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
 });
 
 router.beforeEach((to) => {
@@ -50,8 +58,8 @@ router.beforeEach((to) => {
     return {
       path: "/login",
       query: {
-        redirect: to.fullPath
-      }
+        redirect: to.fullPath,
+      },
     };
   }
 
@@ -61,7 +69,5 @@ router.beforeEach((to) => {
 
   return true;
 });
-
-export default router;
 
 export default router;

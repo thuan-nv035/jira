@@ -1,16 +1,34 @@
 import { ref } from "vue";
 import { activityApi, getErrorMessage } from "../services/api";
-import { formatDateTime } from "../utils/dateUtils";
 import { getActivityClass, getActivityLabel, getChangedFields } from "../utils/activityUtils";
+import { formatDateTime } from "../utils/dateUtils";
 import { useToast } from "./useToast";
+
+const ISSUE_ACTIVITY_LIMIT = 10;
+const SCROLL_LOAD_OFFSET = 80;
 
 export function useIssueActivity({ props, error }) {
   const issueActivities = ref([]);
   const issueActivityLoading = ref(false);
   const issueActivityLoadingMore = ref(false);
   const issueActivityHasMore = ref(true);
+
   const toast = useToast();
-  const ISSUE_ACTIVITY_LIMIT = 10;
+
+  function setError(err) {
+    const message = getErrorMessage(err);
+    error.value = message;
+    toast.error(message);
+  }
+
+  function mergeUniqueActivities(currentItems, newItems) {
+    const currentIds = new Set(currentItems.map((item) => item.id));
+
+    return [
+      ...currentItems,
+      ...newItems.filter((item) => !currentIds.has(item.id)),
+    ];
+  }
 
   async function loadIssueActivities(options = {}) {
     const reset = options.reset ?? false;
@@ -24,7 +42,10 @@ export function useIssueActivity({ props, error }) {
 
     if (reset) {
       issueActivityHasMore.value = true;
-      if (!silent) issueActivityLoading.value = true;
+
+      if (!silent) {
+        issueActivityLoading.value = true;
+      }
     } else {
       issueActivityLoadingMore.value = true;
     }
@@ -35,18 +56,13 @@ export function useIssueActivity({ props, error }) {
         offset,
       });
 
-      if (reset) {
-        issueActivities.value = data;
-      } else {
-        const currentIds = new Set(issueActivities.value.map((item) => item.id));
-        const newItems = data.filter((item) => !currentIds.has(item.id));
-        issueActivities.value = [...issueActivities.value, ...newItems];
-      }
+      issueActivities.value = reset
+        ? data
+        : mergeUniqueActivities(issueActivities.value, data);
 
       issueActivityHasMore.value = data.length === ISSUE_ACTIVITY_LIMIT;
     } catch (err) {
-      error.value = getErrorMessage(err);
-      toast.error(error.value);
+      setError(err);
     } finally {
       issueActivityLoading.value = false;
       issueActivityLoadingMore.value = false;
@@ -55,10 +71,15 @@ export function useIssueActivity({ props, error }) {
 
   function onIssueActivityScroll(event) {
     const el = event.target;
-    const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+
+    const nearBottom =
+      el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_LOAD_OFFSET;
 
     if (nearBottom) {
-      loadIssueActivities({ reset: false, silent: true });
+      loadIssueActivities({
+        reset: false,
+        silent: true,
+      });
     }
   }
 
@@ -66,7 +87,10 @@ export function useIssueActivity({ props, error }) {
     const issueId = Number(event.detail?.issue_id);
 
     if (!issueId || issueId === Number(props.issue.id)) {
-      loadIssueActivities({ reset: true, silent: true });
+      loadIssueActivities({
+        reset: true,
+        silent: true,
+      });
     }
   }
 
