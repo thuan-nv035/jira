@@ -1,22 +1,5 @@
 # Jira Clone Frontend
 
-Frontend Vue 3 + Vite + Tailwind CSS + WebSocket cho backend Jira Clone FastAPI.
-
-## Chức năng
-
-- Register / Login JWT
-- Dashboard danh sách project
-- Tạo project mới
-- Board Kanban theo project
-- Tạo issue/task/bug/story
-- Kéo thả issue giữa các column
-- Xem / sửa / xóa issue
-- Comment trong issue
-- Add member vào project
-- Chuông thông báo realtime
-- Đọc / đánh dấu tất cả đã đọc / xóa thông báo
-- Realtime WebSocket theo project
-
 ## Cài đặt
 
 ```bash
