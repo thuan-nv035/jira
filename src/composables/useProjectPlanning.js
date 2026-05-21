@@ -1,5 +1,6 @@
 import { reactive, ref } from "vue";
 import { epicApi, getErrorMessage, sprintApi } from "../services/api";
+import { useSprintActions } from "./useSprintActions";
 import { useToast } from "./useToast";
 export function useProjectPlanning({ projectId, error, refreshIssues, canEditIssues }) {
   const epics = ref([]);
@@ -7,6 +8,12 @@ export function useProjectPlanning({ projectId, error, refreshIssues, canEditIss
   const epicLoading = ref(false);
   const sprintLoading = ref(false);
   const toast = useToast();
+
+  const { startSprint, completeSprint } = useSprintActions({
+    error,
+    onUpdated: () => loadSprints({ silent: true }),
+  });
+
   const epicForm = reactive({ name: "", description: "", color: "#7c3aed" });
   const sprintForm = reactive({ name: "", goal: "", start_date: "", end_date: "", status: "PLANNED" });
 
@@ -123,5 +130,7 @@ export function useProjectPlanning({ projectId, error, refreshIssues, canEditIss
     createSprint,
     deleteEpic,
     deleteSprint,
+    startSprint,
+    completeSprint,
   };
 }

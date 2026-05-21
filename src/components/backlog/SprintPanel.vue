@@ -36,7 +36,7 @@ const emit = defineEmits([
   "complete",
   "drop-issue",
   "drag-start",
-  "drag-end"
+  "drag-end",
 ]);
 
 const statusClass = computed(() => {
@@ -96,6 +96,12 @@ const statusClass = computed(() => {
       </div>
 
       <div class="flex flex-wrap gap-2">
+        <router-link
+          :to="`/projects/${sprint.project_id}/sprints/${sprint.id}`"
+          class="rounded-2xl border border-blue-200 px-3 py-2 text-xs font-black text-blue-600 transition hover:bg-blue-50"
+        >
+          Open board
+        </router-link>
         <button
           type="button"
           class="rounded-2xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-100"
@@ -143,39 +149,39 @@ const statusClass = computed(() => {
     </div>
 
     <div
-  class="min-h-[120px] rounded-3xl border border-dashed border-transparent transition"
-  @dragover.prevent
-  @drop.prevent="emit('drop-issue', sprint)"
->
-  <div
-    v-if="loading"
-    class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
-  >
-    Loading sprint issues...
-  </div>
+      class="min-h-[120px] rounded-3xl border border-dashed border-transparent transition"
+      @dragover.prevent
+      @drop.prevent="emit('drop-issue', sprint)"
+    >
+      <div
+        v-if="loading"
+        class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
+      >
+        Loading sprint issues...
+      </div>
 
-  <div
-    v-else-if="issues.length === 0"
-    class="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 p-5 text-center text-sm font-semibold text-blue-500"
-  >
-    Drop issues here to add them to this sprint.
-  </div>
+      <div
+        v-else-if="issues.length === 0"
+        class="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 p-5 text-center text-sm font-semibold text-blue-500"
+      >
+        Drop issues here to add them to this sprint.
+      </div>
 
-  <div v-else class="space-y-3">
-    <BacklogIssueItem
-      v-for="issue in issues"
-      :key="issue.id"
-      :issue="issue"
-      :sprints="allSprints"
-      :can-edit="canEdit"
-      mode="sprint"
-      @open="emit('open-issue', $event)"
-      @move-to-sprint="emit('move-to-sprint', $event)"
-      @move-to-backlog="emit('move-to-backlog', $event)"
-      @drag-start="emit('drag-start', $event)"
-      @drag-end="emit('drag-end')"
-    />
-  </div>
-</div>
+      <div v-else class="space-y-3">
+        <BacklogIssueItem
+          v-for="issue in issues"
+          :key="issue.id"
+          :issue="issue"
+          :sprints="allSprints"
+          :can-edit="canEdit"
+          mode="sprint"
+          @open="emit('open-issue', $event)"
+          @move-to-sprint="emit('move-to-sprint', $event)"
+          @move-to-backlog="emit('move-to-backlog', $event)"
+          @drag-start="emit('drag-start', $event)"
+          @drag-end="emit('drag-end')"
+        />
+      </div>
+    </div>
   </section>
 </template>

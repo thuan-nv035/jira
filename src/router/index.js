@@ -48,6 +48,12 @@ const routes = [
     component: () => import("../views/BacklogView.vue"),
     meta: { requiresAuth: true },
   },
+  {
+    path: "/projects/:id/sprints/:sprintId",
+    name: "sprint-board",
+    component: () => import("../views/SprintBoardView.vue"),
+    meta: { requiresAuth: true },
+  },
 ];
 
 const router = createRouter({

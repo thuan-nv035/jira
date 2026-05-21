@@ -1,526 +1,687 @@
 import axios from "axios";
-import { clearAuth, getToken, saveAuth } from "../utils/storage";
+import {
+    clearAuth,
+    getToken,
+    saveAuth
+} from "../utils/storage";
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+    import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
+    baseURL: API_BASE_URL,
+    headers: {
+        "Content-Type": "application/json",
+    },
 });
 
 api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+    const token = getToken();
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
 });
 
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const status = error?.response?.status;
+    (response) => response,
+    (error) => {
+        const status = error?.response?.status;
 
-    if (status === 401) {
-      removeToken();
+        if (status === 401) {
+            removeToken();
 
-      window.dispatchEvent(
-        new CustomEvent("jira-auth-expired", {
-          detail: {
-            message: "Your session has expired. Please login again.",
-          },
-        }),
-      );
+            window.dispatchEvent(
+                new CustomEvent("jira-auth-expired", {
+                    detail: {
+                        message: "Your session has expired. Please login again.",
+                    },
+                }),
+            );
 
-      if (router.currentRoute.value.path !== "/login") {
-        router.push("/login");
-      }
-    }
+            if (router.currentRoute.value.path !== "/login") {
+                router.push("/login");
+            }
+        }
 
-    return Promise.reject(error);
-  },
+        return Promise.reject(error);
+    },
 );
 
 function getErrorMessage(error) {
-  const detail = error.response?.data?.detail;
-  if (Array.isArray(detail)) {
-    return detail.map((item) => item.msg).join("; ");
-  }
-  return detail || error.message || "Something went wrong";
+    const detail = error.response?.data?.detail;
+    if (Array.isArray(detail)) {
+        return detail.map((item) => item.msg).join("; ");
+    }
+    return detail || error.message || "Something went wrong";
 }
 
 export const authApi = {
-  async register(payload) {
-    const { data } = await api.post("/auth/register", payload);
-    saveAuth(data.access_token, data.user);
-    return data;
-  },
-  async login(email, password) {
-    const form = new URLSearchParams();
-    form.append("username", email);
-    form.append("password", password);
+    async register(payload) {
+        const {
+            data
+        } = await api.post("/auth/register", payload);
+        saveAuth(data.access_token, data.user);
+        return data;
+    },
+    async login(email, password) {
+        const form = new URLSearchParams();
+        form.append("username", email);
+        form.append("password", password);
 
-    const { data } = await api.post("/auth/login", form, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-    saveAuth(data.access_token, data.user);
-    return data;
-  },
-  async me() {
-    const { data } = await api.get("/auth/me");
-    return data;
-  },
+        const {
+            data
+        } = await api.post("/auth/login", form, {
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+        });
+        saveAuth(data.access_token, data.user);
+        return data;
+    },
+    async me() {
+        const {
+            data
+        } = await api.get("/auth/me");
+        return data;
+    },
 };
 
 export const projectApi = {
-  async list() {
-    const { data } = await api.get("/projects");
-    return data;
-  },
-  async create(payload) {
-    const { data } = await api.post("/projects", payload);
-    return data;
-  },
-  async get(projectId) {
-    const { data } = await api.get(`/projects/${projectId}`);
-    return data;
-  },
-  async update(projectId, payload) {
-    const { data } = await api.patch(`/projects/${projectId}`, payload);
-    return data;
-  },
-  async members(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/members`);
-    return data;
-  },
-  async addMember(projectId, payload) {
-    const { data } = await api.post(`/projects/${projectId}/members`, payload);
-    return data;
-  },
-  async updateMemberRole(projectId, userId, role) {
-    const { data } = await api.patch(
-      `/projects/${projectId}/members/${userId}/role`,
-      {
-        role,
-      },
-    );
+    async list() {
+        const {
+            data
+        } = await api.get("/projects");
+        return data;
+    },
+    async create(payload) {
+        const {
+            data
+        } = await api.post("/projects", payload);
+        return data;
+    },
+    async get(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}`);
+        return data;
+    },
+    async update(projectId, payload) {
+        const {
+            data
+        } = await api.patch(`/projects/${projectId}`, payload);
+        return data;
+    },
+    async members(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/members`);
+        return data;
+    },
+    async addMember(projectId, payload) {
+        const {
+            data
+        } = await api.post(`/projects/${projectId}/members`, payload);
+        return data;
+    },
+    async updateMemberRole(projectId, userId, role) {
+        const {
+            data
+        } = await api.patch(
+            `/projects/${projectId}/members/${userId}/role`, {
+                role,
+            },
+        );
 
-    return data;
-  },
+        return data;
+    },
 
-  async removeMember(projectId, userId) {
-    await api.delete(`/projects/${projectId}/members/${userId}`);
-  },
+    async removeMember(projectId, userId) {
+        await api.delete(`/projects/${projectId}/members/${userId}`);
+    },
 };
 
 export const columnApi = {
-  async list(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/columns`);
-    return data;
-  },
-  async create(projectId, payload) {
-    const { data } = await api.post(`/projects/${projectId}/columns`, payload);
-    return data;
-  },
-  async update(projectId, columnId, payload) {
-    const { data } = await api.patch(
-      `/projects/${projectId}/columns/${columnId}`,
-      payload,
-    );
-    return data;
-  },
-  async remove(projectId, columnId) {
-    await api.delete(`/projects/${projectId}/columns/${columnId}`);
-  },
+    async list(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/columns`);
+        return data;
+    },
+    async create(projectId, payload) {
+        const {
+            data
+        } = await api.post(`/projects/${projectId}/columns`, payload);
+        return data;
+    },
+    async update(projectId, columnId, payload) {
+        const {
+            data
+        } = await api.patch(
+            `/projects/${projectId}/columns/${columnId}`,
+            payload,
+        );
+        return data;
+    },
+    async remove(projectId, columnId) {
+        await api.delete(`/projects/${projectId}/columns/${columnId}`);
+    },
 };
 
 export const issueApi = {
-  async list(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/issues`);
-    return data;
-  },
-  async create(projectId, payload) {
-    const { data } = await api.post(`/projects/${projectId}/issues`, payload);
-    return data;
-  },
-  async update(projectId, issueId, payload) {
-    const { data } = await api.patch(
-      `/projects/${projectId}/issues/${issueId}`,
-      payload,
-    );
-    return data;
-  },
-  async move(projectId, issueId, payload) {
-    const { data } = await api.patch(
-      `/projects/${projectId}/issues/${issueId}/move`,
-      payload,
-    );
-    return data;
-  },
-  async search(projectId, params = {}) {
-    const cleanParams = {};
+    async list(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/issues`);
+        return data;
+    },
+    async create(projectId, payload) {
+        const {
+            data
+        } = await api.post(`/projects/${projectId}/issues`, payload);
+        return data;
+    },
+    async update(projectId, issueId, payload) {
+        const {
+            data
+        } = await api.patch(
+            `/projects/${projectId}/issues/${issueId}`,
+            payload,
+        );
+        return data;
+    },
+    async move(projectId, issueId, payload) {
+        const {
+            data
+        } = await api.patch(
+            `/projects/${projectId}/issues/${issueId}/move`,
+            payload,
+        );
+        return data;
+    },
+    async search(projectId, params = {}) {
+        const cleanParams = {};
 
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== "" && value !== null && value !== undefined) {
-        cleanParams[key] = value;
-      }
-    });
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== "" && value !== null && value !== undefined) {
+                cleanParams[key] = value;
+            }
+        });
 
-    const { data } = await api.get(`/projects/${projectId}/issues/search`, {
-      params: cleanParams,
-    });
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/issues/search`, {
+            params: cleanParams,
+        });
 
-    return data;
-  },
-  async remove(projectId, issueId) {
-    await api.delete(`/projects/${projectId}/issues/${issueId}`);
-  },
-  async get(projectId, issueId) {
-    const { data } = await api.get(`/projects/${projectId}/issues/${issueId}`);
-    return data;
-  },
+        return data;
+    },
+    async remove(projectId, issueId) {
+        await api.delete(`/projects/${projectId}/issues/${issueId}`);
+    },
+    async get(projectId, issueId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/issues/${issueId}`);
+        return data;
+    },
 };
 
 export const commentApi = {
-  async list(issueId) {
-    const { data } = await api.get(`/issues/${issueId}/comments`);
-    return data;
-  },
-  async create(issueId, payload) {
-    const { data } = await api.post(`/issues/${issueId}/comments`, payload);
-    return data;
-  },
+    async list(issueId) {
+        const {
+            data
+        } = await api.get(`/issues/${issueId}/comments`);
+        return data;
+    },
+    async create(issueId, payload) {
+        const {
+            data
+        } = await api.post(`/issues/${issueId}/comments`, payload);
+        return data;
+    },
 };
 
 export const activityApi = {
-  async listProjectLog(projectId, { limit = 50, offset = 0 } = {}) {
-    const { data } = await api.get(`/projects/${projectId}/activity-logs`, {
-      params: { limit, offset },
-    });
-    return data;
-  },
+    async listProjectLog(projectId, {
+        limit = 50,
+        offset = 0
+    } = {}) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/activity-logs`, {
+            params: {
+                limit,
+                offset
+            },
+        });
+        return data;
+    },
 
-  async listIssueLog(issueId, { limit = 50, offset = 0 } = {}) {
-    const { data } = await api.get(`/issues/${issueId}/activity-logs`, {
-      params: { limit, offset },
-    });
-    return data;
-  },
+    async listIssueLog(issueId, {
+        limit = 50,
+        offset = 0
+    } = {}) {
+        const {
+            data
+        } = await api.get(`/issues/${issueId}/activity-logs`, {
+            params: {
+                limit,
+                offset
+            },
+        });
+        return data;
+    },
 };
 
 export const notificationApi = {
-  async list({ unreadOnly = false, limit = 30 } = {}) {
-    const { data } = await api.get("/notifications", {
-      params: { unread_only: unreadOnly, limit },
-    });
-    return data;
-  },
-  async unreadCount() {
-    const { data } = await api.get("/notifications/unread-count");
-    return data;
-  },
-  async markRead(notificationId) {
-    const { data } = await api.patch(`/notifications/${notificationId}/read`);
-    return data;
-  },
-  async markAllRead() {
-    const { data } = await api.patch("/notifications/read-all");
-    return data;
-  },
-  async remove(notificationId) {
-    await api.delete(`/notifications/${notificationId}`);
-  },
+    async list({
+        unreadOnly = false,
+        limit = 30
+    } = {}) {
+        const {
+            data
+        } = await api.get("/notifications", {
+            params: {
+                unread_only: unreadOnly,
+                limit
+            },
+        });
+        return data;
+    },
+    async unreadCount() {
+        const {
+            data
+        } = await api.get("/notifications/unread-count");
+        return data;
+    },
+    async markRead(notificationId) {
+        const {
+            data
+        } = await api.patch(`/notifications/${notificationId}/read`);
+        return data;
+    },
+    async markAllRead() {
+        const {
+            data
+        } = await api.patch("/notifications/read-all");
+        return data;
+    },
+    async remove(notificationId) {
+        await api.delete(`/notifications/${notificationId}`);
+    },
 };
 
 export const checklistApi = {
-  async list(issueId) {
-    const { data } = await api.get(`/issues/${issueId}/checklists`);
-    return data;
-  },
+    async list(issueId) {
+        const {
+            data
+        } = await api.get(`/issues/${issueId}/checklists`);
+        return data;
+    },
 
-  async create(issueId, payload) {
-    const { data } = await api.post(`/issues/${issueId}/checklists`, payload);
-    return data;
-  },
+    async create(issueId, payload) {
+        const {
+            data
+        } = await api.post(`/issues/${issueId}/checklists`, payload);
+        return data;
+    },
 
-  async update(checklistId, payload) {
-    const { data } = await api.patch(`/checklists/${checklistId}`, payload);
-    return data;
-  },
+    async update(checklistId, payload) {
+        const {
+            data
+        } = await api.patch(`/checklists/${checklistId}`, payload);
+        return data;
+    },
 
-  async remove(checklistId) {
-    await api.delete(`/checklists/${checklistId}`);
-  },
+    async remove(checklistId) {
+        await api.delete(`/checklists/${checklistId}`);
+    },
 };
 
 export const dashboardApi = {
-  async summary(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/dashboard/summary`);
-    return data;
-  },
+    async summary(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/dashboard/summary`);
+        return data;
+    },
 
-  async issuesByStatus(projectId) {
-    const { data } = await api.get(
-      `/projects/${projectId}/dashboard/issues-by-status`,
-    );
-    return data;
-  },
+    async issuesByStatus(projectId) {
+        const {
+            data
+        } = await api.get(
+            `/projects/${projectId}/dashboard/issues-by-status`,
+        );
+        return data;
+    },
 
-  async issuesByPriority(projectId) {
-    const { data } = await api.get(
-      `/projects/${projectId}/dashboard/issues-by-priority`,
-    );
-    return data;
-  },
+    async issuesByPriority(projectId) {
+        const {
+            data
+        } = await api.get(
+            `/projects/${projectId}/dashboard/issues-by-priority`,
+        );
+        return data;
+    },
 
-  async issuesByAssignee(projectId) {
-    const { data } = await api.get(
-      `/projects/${projectId}/dashboard/issues-by-assignee`,
-    );
-    return data;
-  },
+    async issuesByAssignee(projectId) {
+        const {
+            data
+        } = await api.get(
+            `/projects/${projectId}/dashboard/issues-by-assignee`,
+        );
+        return data;
+    },
 
-  async recentActivity(projectId, limit = 8) {
-    const { data } = await api.get(
-      `/projects/${projectId}/dashboard/recent-activity`,
-      {
-        params: { limit },
-      },
-    );
+    async recentActivity(projectId, limit = 8) {
+        const {
+            data
+        } = await api.get(
+            `/projects/${projectId}/dashboard/recent-activity`, {
+                params: {
+                    limit
+                },
+            },
+        );
 
-    return data;
-  },
+        return data;
+    },
 };
 
 export const labelApi = {
-  async listProjectLabels(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/labels`);
-    return data;
-  },
+    async listProjectLabels(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/labels`);
+        return data;
+    },
 
-  async create(projectId, payload) {
-    const { data } = await api.post(`/projects/${projectId}/labels`, payload);
-    return data;
-  },
+    async create(projectId, payload) {
+        const {
+            data
+        } = await api.post(`/projects/${projectId}/labels`, payload);
+        return data;
+    },
 
-  async update(labelId, payload) {
-    const { data } = await api.patch(`/labels/${labelId}`, payload);
-    return data;
-  },
+    async update(labelId, payload) {
+        const {
+            data
+        } = await api.patch(`/labels/${labelId}`, payload);
+        return data;
+    },
 
-  async remove(labelId) {
-    await api.delete(`/labels/${labelId}`);
-  },
+    async remove(labelId) {
+        await api.delete(`/labels/${labelId}`);
+    },
 
-  async listIssueLabels(issueId) {
-    const { data } = await api.get(`/issues/${issueId}/labels`);
-    return data;
-  },
+    async listIssueLabels(issueId) {
+        const {
+            data
+        } = await api.get(`/issues/${issueId}/labels`);
+        return data;
+    },
 
-  async addToIssue(issueId, labelId) {
-    const { data } = await api.post(`/issues/${issueId}/labels/${labelId}`);
-    return data;
-  },
+    async addToIssue(issueId, labelId) {
+        const {
+            data
+        } = await api.post(`/issues/${issueId}/labels/${labelId}`);
+        return data;
+    },
 
-  async removeFromIssue(issueId, labelId) {
-    await api.delete(`/issues/${issueId}/labels/${labelId}`);
-  },
+    async removeFromIssue(issueId, labelId) {
+        await api.delete(`/issues/${issueId}/labels/${labelId}`);
+    },
 };
 
 export const attachmentApi = {
-  async list(issueId) {
-    const { data } = await api.get(`/issues/${issueId}/attachments`);
-    return data;
-  },
+    async list(issueId) {
+        const {
+            data
+        } = await api.get(`/issues/${issueId}/attachments`);
+        return data;
+    },
 
-  async upload(issueId, file, onProgress) {
-    const formData = new FormData();
-    formData.append("file", file);
+    async upload(issueId, file, onProgress) {
+        const formData = new FormData();
+        formData.append("file", file);
 
-    const { data } = await api.post(
-      `/issues/${issueId}/attachments`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          if (!progressEvent.total || !onProgress) return;
+        const {
+            data
+        } = await api.post(
+            `/issues/${issueId}/attachments`,
+            formData, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+                onUploadProgress: (progressEvent) => {
+                    if (!progressEvent.total || !onProgress) return;
 
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total,
-          );
-          onProgress(percent);
-        },
-      },
-    );
+                    const percent = Math.round(
+                        (progressEvent.loaded * 100) / progressEvent.total,
+                    );
+                    onProgress(percent);
+                },
+            },
+        );
 
-    return data;
-  },
+        return data;
+    },
 
-  async uploadMany(issueId, files, onProgress) {
-    const formData = new FormData();
+    async uploadMany(issueId, files, onProgress) {
+        const formData = new FormData();
 
-    Array.from(files).forEach((file) => {
-      formData.append("files", file);
-    });
+        Array.from(files).forEach((file) => {
+            formData.append("files", file);
+        });
 
-    const { data } = await api.post(
-      `/issues/${issueId}/attachments/bulk`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          if (!progressEvent.total || !onProgress) return;
+        const {
+            data
+        } = await api.post(
+            `/issues/${issueId}/attachments/bulk`,
+            formData, {
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                },
+                onUploadProgress: (progressEvent) => {
+                    if (!progressEvent.total || !onProgress) return;
 
-          const percent = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total,
-          );
-          onProgress(percent);
-        },
-      },
-    );
+                    const percent = Math.round(
+                        (progressEvent.loaded * 100) / progressEvent.total,
+                    );
+                    onProgress(percent);
+                },
+            },
+        );
 
-    return data;
-  },
+        return data;
+    },
 
-  async preview(issueId, attachmentId) {
-    const response = await api.get(
-      `/issues/${issueId}/attachments/${attachmentId}/view`,
-      {
-        responseType: "blob",
-      },
-    );
+    async preview(issueId, attachmentId) {
+        const response = await api.get(
+            `/issues/${issueId}/attachments/${attachmentId}/view`, {
+                responseType: "blob",
+            },
+        );
 
-    return response.data;
-  },
+        return response.data;
+    },
 
-  async download(issueId, attachmentId) {
-    const response = await api.get(
-      `/issues/${issueId}/attachments/${attachmentId}/download`,
-      {
-        responseType: "blob",
-      },
-    );
+    async download(issueId, attachmentId) {
+        const response = await api.get(
+            `/issues/${issueId}/attachments/${attachmentId}/download`, {
+                responseType: "blob",
+            },
+        );
 
-    return response.data;
-  },
+        return response.data;
+    },
 
-  async remove(issueId, attachmentId) {
-    await api.delete(`/issues/${issueId}/attachments/${attachmentId}`);
-  },
+    async remove(issueId, attachmentId) {
+        await api.delete(`/issues/${issueId}/attachments/${attachmentId}`);
+    },
 };
 
 export const epicApi = {
-  async list(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/epics`);
-    return data;
-  },
+    async list(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/epics`);
+        return data;
+    },
 
-  async create(projectId, payload) {
-    const { data } = await api.post(`/projects/${projectId}/epics`, payload);
-    return data;
-  },
+    async create(projectId, payload) {
+        const {
+            data
+        } = await api.post(`/projects/${projectId}/epics`, payload);
+        return data;
+    },
 
-  async update(epicId, payload) {
-    const { data } = await api.patch(`/epics/${epicId}`, payload);
-    return data;
-  },
+    async update(epicId, payload) {
+        const {
+            data
+        } = await api.patch(`/epics/${epicId}`, payload);
+        return data;
+    },
 
-  async remove(epicId) {
-    await api.delete(`/epics/${epicId}`);
-  },
+    async remove(epicId) {
+        await api.delete(`/epics/${epicId}`);
+    },
 
-  async updateIssueEpic(issueId, epicId) {
-    const { data } = await api.patch(`/issues/${issueId}/epic`, {
-      epic_id: epicId,
-    });
+    async updateIssueEpic(issueId, epicId) {
+        const {
+            data
+        } = await api.patch(`/issues/${issueId}/epic`, {
+            epic_id: epicId,
+        });
 
-    return data;
-  },
+        return data;
+    },
 };
 
 export const sprintApi = {
-  async list(projectId) {
-    const { data } = await api.get(`/projects/${projectId}/sprints`);
-    return data;
-  },
+    async list(projectId) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/sprints`);
+        return data;
+    },
 
-  async create(projectId, payload) {
-    const { data } = await api.post(`/projects/${projectId}/sprints`, payload);
-    return data;
-  },
+    async create(projectId, payload) {
+        const {
+            data
+        } = await api.post(`/projects/${projectId}/sprints`, payload);
+        return data;
+    },
 
-  async update(sprintId, payload) {
-    const { data } = await api.patch(`/sprints/${sprintId}`, payload);
-    return data;
-  },
+    async update(sprintId, payload) {
+        const {
+            data
+        } = await api.patch(`/sprints/${sprintId}`, payload);
+        return data;
+    },
 
-  async remove(sprintId) {
-    await api.delete(`/sprints/${sprintId}`);
-  },
+    async remove(sprintId) {
+        await api.delete(`/sprints/${sprintId}`);
+    },
 
-  async updateIssueSprint(issueId, sprintId) {
-    const { data } = await api.patch(`/issues/${issueId}/sprint`, {
-      sprint_id: sprintId,
-    });
+    async updateIssueSprint(issueId, sprintId) {
+        const {
+            data
+        } = await api.patch(`/issues/${issueId}/sprint`, {
+            sprint_id: sprintId,
+        });
 
-    return data;
-  },
+        return data;
+    },
 
-  async start(sprintId) {
-    const { data } = await api.patch(`/sprints/${sprintId}/start`);
-    return data;
-  },
+    async start(sprintId) {
+        const {
+            data
+        } = await api.patch(`/sprints/${sprintId}/start`);
+        return data;
+    },
 
-  async complete(sprintId) {
-    const { data } = await api.patch(`/sprints/${sprintId}/complete`);
-    return data;
-  },
+    async complete(sprintId) {
+        const {
+            data
+        } = await api.patch(`/sprints/${sprintId}/complete`);
+        return data;
+    },
 };
 
 export const meApi = {
-  async issues(params = {}) {
-    const cleanParams = {};
+    async issues(params = {}) {
+        const cleanParams = {};
 
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== "" && value !== null && value !== undefined) {
-        cleanParams[key] = value;
-      }
-    });
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== "" && value !== null && value !== undefined) {
+                cleanParams[key] = value;
+            }
+        });
 
-    const { data } = await api.get("/me/issues", {
-      params: cleanParams,
-    });
+        const {
+            data
+        } = await api.get("/me/issues", {
+            params: cleanParams,
+        });
 
-    return data;
-  },
+        return data;
+    },
 };
 
 export const backlogApi = {
-  async listBacklog(projectId, params = {}) {
-    const { data } = await api.get(`/projects/${projectId}/backlog`, {
-      params,
-    });
+    async listBacklog(projectId, params = {}) {
+        const {
+            data
+        } = await api.get(`/projects/${projectId}/backlog`, {
+            params,
+        });
 
-    return data;
-  },
+        return data;
+    },
 
-  async listSprintIssues(projectId, sprintId, params = {}) {
-    const { data } = await api.get(
-      `/projects/${projectId}/sprints/${sprintId}/issues`,
-      {
-        params,
-      },
-    );
+    async listSprintIssues(projectId, sprintId, params = {}) {
+        const {
+            data
+        } = await api.get(
+            `/projects/${projectId}/sprints/${sprintId}/issues`, {
+                params,
+            },
+        );
 
-    return data;
-  },
+        return data;
+    },
 };
 
-export { api, getErrorMessage };
+export const subtaskApi = {
+    async list(issueId) {
+        const {
+            data
+        } = await api.get(`/issues/${issueId}/subtasks`);
+        return data;
+    },
+
+    async create(issueId, payload) {
+        const {
+            data
+        } = await api.post(`/issues/${issueId}/subtasks`, payload);
+        return data;
+    },
+
+    async update(subtaskId, payload) {
+        const {
+            data
+        } = await api.patch(`/subtasks/${subtaskId}`, payload);
+        return data;
+    },
+
+    async remove(subtaskId) {
+        await api.delete(`/subtasks/${subtaskId}`);
+    }
+};
+
+export {
+    api,
+    getErrorMessage
+};

@@ -19,34 +19,74 @@ export function useBoardRealtime({
   function onSocketMessage(payload) {
     lastEvent.value = payload;
 
-    if (["epic.created", "epic.updated", "epic.deleted"].includes(payload.event)) {
-      loadEpics({ silent: true });
-      refreshIssues({ silent: true });
+    if (
+      ["epic.created", "epic.updated", "epic.deleted"].includes(payload.event)
+    ) {
+      loadEpics({
+        silent: true,
+      });
+      refreshIssues({
+        silent: true,
+      });
       return;
     }
 
-    if (["sprint.created", "sprint.updated", "sprint.deleted"].includes(payload.event)) {
-      loadSprints({ silent: true });
-      refreshIssues({ silent: true });
+    if (
+      ["sprint.created", "sprint.updated", "sprint.deleted"].includes(
+        payload.event,
+      )
+    ) {
+      loadSprints({
+        silent: true,
+      });
+      refreshIssues({
+        silent: true,
+      });
       return;
     }
 
-    if (["issue.epic_updated", "issue.sprint_updated"].includes(payload.event)) {
-      refreshIssues({ silent: true });
-      window.dispatchEvent(new CustomEvent("jira-epic-sprint-refresh", { detail: payload.data }));
+    if (
+      ["issue.epic_updated", "issue.sprint_updated"].includes(payload.event)
+    ) {
+      refreshIssues({
+        silent: true,
+      });
+      window.dispatchEvent(
+        new CustomEvent("jira-epic-sprint-refresh", {
+          detail: payload.data,
+        }),
+      );
       return;
     }
 
-    if (["label.created", "label.updated", "label.deleted"].includes(payload.event)) {
-      loadProjectLabels({ silent: true });
-      refreshIssues({ silent: true });
-      window.dispatchEvent(new CustomEvent("jira-label-refresh", { detail: payload.data }));
+    if (
+      ["label.created", "label.updated", "label.deleted"].includes(
+        payload.event,
+      )
+    ) {
+      loadProjectLabels({
+        silent: true,
+      });
+      refreshIssues({
+        silent: true,
+      });
+      window.dispatchEvent(
+        new CustomEvent("jira-label-refresh", {
+          detail: payload.data,
+        }),
+      );
       return;
     }
 
     if (["issue.label_added", "issue.label_removed"].includes(payload.event)) {
-      window.dispatchEvent(new CustomEvent("jira-label-refresh", { detail: payload.data }));
-      refreshIssues({ silent: true });
+      window.dispatchEvent(
+        new CustomEvent("jira-label-refresh", {
+          detail: payload.data,
+        }),
+      );
+      refreshIssues({
+        silent: true,
+      });
       return;
     }
 
@@ -66,23 +106,66 @@ export function useBoardRealtime({
       window.dispatchEvent(new CustomEvent("jira-dashboard-refresh"));
     }
 
-    if (["checklist.created", "checklist.updated", "checklist.deleted"].includes(payload.event)) {
-      window.dispatchEvent(new CustomEvent("jira-checklist-refresh", { detail: payload.data }));
+    if (
+      ["checklist.created", "checklist.updated", "checklist.deleted"].includes(
+        payload.event,
+      )
+    ) {
+      window.dispatchEvent(
+        new CustomEvent("jira-checklist-refresh", {
+          detail: payload.data,
+        }),
+      );
+      refreshIssues({
+        silent: true,
+      });
+      return;
+    }
+
+    if (
+      ["subtask.created", "subtask.updated", "subtask.deleted"].includes(
+        payload.event,
+      )
+    ) {
+      window.dispatchEvent(
+        new CustomEvent("jira-subtask-refresh", {
+          detail: payload.data,
+        }),
+      );
+
+      window.dispatchEvent(new CustomEvent("jira-dashboard-refresh"));
+
       refreshIssues({ silent: true });
+
       return;
     }
 
     if (payload.event === "activity.created") {
-      loadProjectLogs({ reset: true, silent: true });
-      window.dispatchEvent(new CustomEvent("jira-activity-refresh", { detail: payload.data }));
+      loadProjectLogs({
+        reset: true,
+        silent: true,
+      });
+      window.dispatchEvent(
+        new CustomEvent("jira-activity-refresh", {
+          detail: payload.data,
+        }),
+      );
     }
 
     if (payload.event === "notification.created") {
-      window.dispatchEvent(new CustomEvent("jira-notification-refresh", { detail: payload.data }));
+      window.dispatchEvent(
+        new CustomEvent("jira-notification-refresh", {
+          detail: payload.data,
+        }),
+      );
     }
 
     if (["attachment.uploaded", "attachment.deleted"].includes(payload.event)) {
-      window.dispatchEvent(new CustomEvent("jira-attachment-refresh", { detail: payload.data }));
+      window.dispatchEvent(
+        new CustomEvent("jira-attachment-refresh", {
+          detail: payload.data,
+        }),
+      );
     }
 
     if (payload.event === "issue.moved") {
@@ -107,12 +190,24 @@ export function useBoardRealtime({
         "activity.created",
       ].includes(payload.event)
     ) {
-      refreshIssues({ silent: true });
+      refreshIssues({
+        silent: true,
+      });
       return;
     }
 
-    if (["column.created", "column.updated", "column.deleted", "member.added", "notification.created"].includes(payload.event)) {
-      loadBoard({ silent: true });
+    if (
+      [
+        "column.created",
+        "column.updated",
+        "column.deleted",
+        "member.added",
+        "notification.created",
+      ].includes(payload.event)
+    ) {
+      loadBoard({
+        silent: true,
+      });
     }
   }
 
@@ -123,7 +218,7 @@ export function useBoardRealtime({
   }
 
   function closeRealtime() {
-    socket?.close();
+    socket.close();
   }
 
   return {

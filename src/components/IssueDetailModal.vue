@@ -8,6 +8,7 @@ import IssueAttachmentsSection from "./issue-detail/IssueAttachmentsSection.vue"
 import IssueChecklistSection from "./issue-detail/IssueChecklistSection.vue";
 import IssueCommentsSection from "./issue-detail/IssueCommentsSection.vue";
 import IssuePropertiesSidebar from "./issue-detail/IssuePropertiesSidebar.vue";
+import IssueSubtasksSection from "./issue-detail/IssueSubtasksSection.vue";
 
 import { useIssueForm } from "../composables/useIssueForm";
 import { useIssuePlanning } from "../composables/useIssuePlanning";
@@ -113,6 +114,12 @@ const { updateIssueEpic, updateIssueSprint } = useIssuePlanning({
             {{ deleting ? "Deleting..." : "Delete" }}
           </button>
         </div>
+
+        <IssueSubtasksSection
+          :issue="issue"
+          :members="members"
+          :can-edit="canEdit"
+        />
 
         <IssueChecklistSection :issue="issue" :can-edit="canEdit" />
         <IssueAttachmentsSection :issue="issue" :can-edit="canEdit" />

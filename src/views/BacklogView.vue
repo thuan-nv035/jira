@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ArrowLeft,
@@ -8,14 +8,14 @@ import {
   RefreshCcw,
   Search,
 } from "lucide-vue-next";
-import {
-  backlogApi,
-  getErrorMessage,
-  projectApi,
-  sprintApi,
-} from "../services/api";
+
 import BacklogIssueItem from "../components/backlog/BacklogIssueItem.vue";
 import SprintPanel from "../components/backlog/SprintPanel.vue";
+import { backlogApi, projectApi, sprintApi } from "../services/api";
+import { useBoardRealtime } from "../composables/useBoardRealtime";
+import { usePageError } from "../composables/usePageError";
+import { useProjectMembers } from "../composables/useProjectMembers";
+import { useSprintActions } from "../composables/useSprintActions";
 import { useToast } from "../composables/useToast";
 
 const route = useRoute();
@@ -32,15 +32,27 @@ const sprintLoadingMap = reactive({});
 
 const loading = ref(false);
 const backlogLoading = ref(false);
-const sprintLoading = ref(false);
 const movingIssueId = ref(null);
-const error = ref("");
 const draggedIssue = ref(null);
 const activeDropZone = ref("");
+const error = ref("");
+
+const { setError } = usePageError(error);
 
 const filters = reactive({
   sprintStatus: "",
   keyword: "",
+});
+
+const {
+  members,
+  canEditIssues,
+  loadCurrentUser,
+  loadProjectMembers,
+} = useProjectMembers({
+  projectId,
+  project,
+  error,
 });
 
 const filteredSprints = computed(() => {
@@ -78,23 +90,6 @@ async function loadProject() {
   project.value = await projectApi.get(projectId.value);
 }
 
-async function loadSprints() {
-  sprintLoading.value = true;
-
-  try {
-    sprints.value = await sprintApi.list(projectId.value);
-
-    await Promise.all(
-      sprints.value.map((sprint) => loadSprintIssues(sprint.id)),
-    );
-  } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-  } finally {
-    sprintLoading.value = false;
-  }
-}
-
 async function loadBacklog() {
   backlogLoading.value = true;
 
@@ -104,8 +99,7 @@ async function loadBacklog() {
       offset: 0,
     });
   } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
+    setError(err);
   } finally {
     backlogLoading.value = false;
   }
@@ -124,23 +118,48 @@ async function loadSprintIssues(sprintId) {
       },
     );
   } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
+    setError(err);
   } finally {
     sprintLoadingMap[sprintId] = false;
   }
 }
 
-async function loadPage() {
-  loading.value = true;
-  error.value = "";
+async function loadSprints() {
+  try {
+    sprints.value = await sprintApi.list(projectId.value);
+
+    await Promise.all(
+      sprints.value.map((sprint) => loadSprintIssues(sprint.id)),
+    );
+  } catch (err) {
+    setError(err);
+  }
+}
+
+async function refreshIssues() {
+  await Promise.all([
+    loadBacklog(),
+    loadSprints(),
+  ]);
+}
+
+async function loadPage(options = {}) {
+  const silent = options.silent ?? false;
+
+  if (!silent) {
+    loading.value = true;
+    error.value = "";
+  }
 
   try {
     await loadProject();
-    await Promise.all([loadBacklog(), loadSprints()]);
+    await Promise.all([
+      loadCurrentUser(),
+      loadProjectMembers(),
+      refreshIssues(),
+    ]);
   } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
+    setError(err);
   } finally {
     loading.value = false;
   }
@@ -163,39 +182,23 @@ async function moveIssueToSprint({ issue, sprintId }) {
   try {
     await sprintApi.updateIssueSprint(issue.id, sprintId);
 
-    backlogIssues.value = backlogIssues.value.filter(
-      (item) => Number(item.id) !== Number(issue.id)
-    );
-
-    Object.keys(sprintIssuesMap).forEach((key) => {
-      sprintIssuesMap[key] = (sprintIssuesMap[key] || []).filter(
-        (item) => Number(item.id) !== Number(issue.id)
-      );
-    });
+    removeIssueFromBacklog(issue.id);
+    removeIssueFromAllSprints(issue.id);
 
     const nextIssue = {
       ...issue,
-      sprint_id: sprintId
+      sprint_id: sprintId,
     };
-
-    if (!sprintIssuesMap[sprintId]) {
-      sprintIssuesMap[sprintId] = [];
-    }
 
     sprintIssuesMap[sprintId] = [
       nextIssue,
-      ...sprintIssuesMap[sprintId]
+      ...(sprintIssuesMap[sprintId] || []),
     ];
 
     toast.success("Issue moved to sprint");
   } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-
-    await Promise.all([
-      loadBacklog(),
-      loadSprints()
-    ]);
+    setError(err);
+    await refreshIssues();
   } finally {
     movingIssueId.value = null;
   }
@@ -209,66 +212,33 @@ async function moveIssueToBacklog(issue) {
   try {
     await sprintApi.updateIssueSprint(issue.id, null);
 
-    Object.keys(sprintIssuesMap).forEach((key) => {
-      sprintIssuesMap[key] = (sprintIssuesMap[key] || []).filter(
-        (item) => Number(item.id) !== Number(issue.id)
-      );
-    });
+    removeIssueFromAllSprints(issue.id);
 
     const nextIssue = {
       ...issue,
-      sprint_id: null
+      sprint_id: null,
     };
 
     backlogIssues.value = [
       nextIssue,
       ...backlogIssues.value.filter(
-        (item) => Number(item.id) !== Number(issue.id)
-      )
+        (item) => Number(item.id) !== Number(issue.id),
+      ),
     ];
 
     toast.success("Issue moved to backlog");
   } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-
-    await Promise.all([
-      loadBacklog(),
-      loadSprints()
-    ]);
+    setError(err);
+    await refreshIssues();
   } finally {
     movingIssueId.value = null;
   }
 }
 
-async function startSprint(sprint) {
-  try {
-    await sprintApi.start(sprint.id);
-    await loadSprints();
-    toast.success("Sprint started");
-  } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-  }
-}
-
-async function completeSprint(sprint) {
-  if (!window.confirm(`Complete sprint "${sprint.name}"?`)) return;
-
-  try {
-    await sprintApi.complete(sprint.id);
-    await loadSprints();
-    toast.success("Sprint completed");
-  } catch (err) {
-    error.value = getErrorMessage(err);
-    toast.error(error.value);
-  }
-}
-
-function clearFilters() {
-  filters.sprintStatus = "";
-  filters.keyword = "";
-}
+const { startSprint, completeSprint } = useSprintActions({
+  error,
+  onUpdated: loadSprints,
+});
 
 function onIssueDragStart(issue) {
   draggedIssue.value = issue;
@@ -313,11 +283,49 @@ async function dropIssueToBacklog() {
   }
 
   await moveIssueToBacklog(issue);
-
   onIssueDragEnd();
 }
 
-onMounted(loadPage);
+function clearFilters() {
+  filters.sprintStatus = "";
+  filters.keyword = "";
+}
+
+function removeIssueFromBacklog(issueId) {
+  backlogIssues.value = backlogIssues.value.filter(
+    (item) => Number(item.id) !== Number(issueId),
+  );
+}
+
+function removeIssueFromAllSprints(issueId) {
+  Object.keys(sprintIssuesMap).forEach((key) => {
+    sprintIssuesMap[key] = (sprintIssuesMap[key] || []).filter(
+      (item) => Number(item.id) !== Number(issueId),
+    );
+  });
+}
+
+const {
+  socketStatus,
+  connectRealtime,
+  closeRealtime,
+} = useBoardRealtime({
+  projectId,
+  loadSprints,
+  refreshIssues,
+  loadProjectMembers,
+  loadBoard: loadPage,
+  applyIssueMovedLocal: refreshIssues,
+});
+
+onMounted(async () => {
+  await loadPage();
+  connectRealtime();
+});
+
+onBeforeUnmount(() => {
+  closeRealtime();
+});
 </script>
 
 <template>
@@ -332,23 +340,35 @@ onMounted(loadPage);
         Back
       </button>
 
-      <section
-        class="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      >
+      <section class="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div class="flex items-center gap-3">
-            <div
-              class="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white"
-            >
+            <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
               <Layers3 class="h-6 w-6" />
             </div>
 
             <div>
-              <h1 class="text-2xl font-black text-slate-950">Backlog</h1>
+              <div class="mb-2 flex flex-wrap items-center gap-2">
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">
+                  {{ project?.key || "PROJECT" }}
+                </span>
+
+                <span
+                  class="rounded-full px-3 py-1 text-xs font-black"
+                  :class="socketStatus === 'connected'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500'"
+                >
+                  {{ socketStatus }}
+                </span>
+              </div>
+
+              <h1 class="text-2xl font-black text-slate-950">
+                Backlog
+              </h1>
 
               <p class="text-sm font-medium text-slate-500">
-                {{ project?.name || "Project" }} · Manage backlog and sprint
-                planning
+                {{ project?.name || "Project" }} · Manage backlog and sprint planning
               </p>
             </div>
           </div>
@@ -375,9 +395,7 @@ onMounted(loadPage);
           </p>
         </div>
 
-        <div
-          class="rounded-3xl border border-blue-100 bg-blue-50 p-5 shadow-sm"
-        >
+        <div class="rounded-3xl border border-blue-100 bg-blue-50 p-5 shadow-sm">
           <p class="text-sm font-black uppercase tracking-wide text-blue-600">
             Sprints
           </p>
@@ -386,9 +404,7 @@ onMounted(loadPage);
           </p>
         </div>
 
-        <div
-          class="rounded-3xl border border-violet-100 bg-violet-50 p-5 shadow-sm"
-        >
+        <div class="rounded-3xl border border-violet-100 bg-violet-50 p-5 shadow-sm">
           <p class="text-sm font-black uppercase tracking-wide text-violet-600">
             Sprint issues
           </p>
@@ -398,12 +414,12 @@ onMounted(loadPage);
         </div>
       </section>
 
-      <section
-        class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-      >
+      <section class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div class="mb-4 flex items-center gap-2">
           <Search class="h-5 w-5 text-slate-400" />
-          <h2 class="font-black text-slate-900">Sprint filters</h2>
+          <h2 class="font-black text-slate-900">
+            Sprint filters
+          </h2>
         </div>
 
         <div class="grid gap-3 md:grid-cols-[1fr_auto_auto]">
@@ -448,44 +464,29 @@ onMounted(loadPage);
         Loading backlog...
       </div>
 
-      <div v-else class="grid gap-6 xl:grid-cols-[420px_1fr]">
-        <section
-          class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
+      <div
+        v-else
+        class="grid gap-6 xl:grid-cols-[420px_1fr]"
+      >
+        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
               <ListTodo class="h-5 w-5 text-slate-500" />
-              <h2 class="font-black text-slate-950">Backlog</h2>
+              <h2 class="font-black text-slate-950">
+                Backlog
+              </h2>
             </div>
 
-            <span
-              class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500"
-            >
+            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">
               {{ backlogIssues.length }} issue(s)
             </span>
           </div>
 
           <div
-            v-if="backlogLoading"
-            class="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500"
-          >
-            Loading backlog issues...
-          </div>
-
-          <div
-            v-else-if="backlogIssues.length === 0"
-            class="rounded-2xl bg-slate-50 p-6 text-center text-sm font-semibold text-slate-400"
-          >
-            No backlog issues.
-          </div>
-
-          <div
             class="min-h-[220px] rounded-3xl border border-dashed transition"
-            :class="
-              activeDropZone === 'backlog'
-                ? 'border-blue-300 bg-blue-50/60 p-3'
-                : 'border-transparent'
-            "
+            :class="activeDropZone === 'backlog'
+              ? 'border-blue-300 bg-blue-50/60 p-3'
+              : 'border-transparent'"
             @dragover.prevent="setActiveDropZone('backlog')"
             @drop.prevent="dropIssueToBacklog"
           >
@@ -503,13 +504,16 @@ onMounted(loadPage);
               Drop issues here to move them back to backlog.
             </div>
 
-            <div v-else class="max-h-[760px] space-y-3 overflow-y-auto pr-1">
+            <div
+              v-else
+              class="max-h-[760px] space-y-3 overflow-y-auto pr-1"
+            >
               <BacklogIssueItem
                 v-for="issue in backlogIssues"
                 :key="issue.id"
                 :issue="issue"
                 :sprints="activeSprints"
-                :can-edit="true"
+                :can-edit="canEditIssues"
                 mode="backlog"
                 @open="openIssue"
                 @move-to-sprint="moveIssueToSprint"
@@ -528,7 +532,7 @@ onMounted(loadPage);
             :issues="sprintIssuesMap[sprint.id] || []"
             :all-sprints="activeSprints"
             :loading="Boolean(sprintLoadingMap[sprint.id])"
-            :can-edit="true"
+            :can-edit="canEditIssues"
             @refresh="loadSprintIssues(sprint.id)"
             @open-issue="openIssue"
             @move-to-sprint="moveIssueToSprint"
@@ -544,7 +548,9 @@ onMounted(loadPage);
             v-if="filteredSprints.length === 0"
             class="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm"
           >
-            <p class="font-black text-slate-700">No sprints found</p>
+            <p class="font-black text-slate-700">
+              No sprints found
+            </p>
 
             <p class="mt-1 text-sm text-slate-400">
               Create sprints from your project board first.

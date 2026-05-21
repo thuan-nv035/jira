@@ -20,6 +20,9 @@ export const ACTIVITY_LABELS = {
   SPRINT_DELETED: "Deleted sprint",
   ISSUE_EPIC_UPDATED: "Updated epic",
   ISSUE_SPRINT_UPDATED: "Updated sprint",
+  SUBTASK_CREATED: "Added subtask",
+  SUBTASK_UPDATED: "Updated subtask",
+  SUBTASK_DELETED: "Deleted subtask",
 };
 
 export const ACTIVITY_CLASSES = {
@@ -36,6 +39,9 @@ export const ACTIVITY_CLASSES = {
   EPIC_UPDATED: "bg-violet-50 text-violet-700 border-violet-100",
   SPRINT_CREATED: "bg-blue-50 text-blue-700 border-blue-100",
   SPRINT_UPDATED: "bg-blue-50 text-blue-700 border-blue-100",
+  SUBTASK_CREATED: "bg-indigo-50 text-indigo-700 border-indigo-100",
+  SUBTASK_UPDATED: "bg-indigo-50 text-indigo-700 border-indigo-100",
+  SUBTASK_DELETED: "bg-rose-50 text-rose-700 border-rose-100",
 };
 
 export function getActivityLabel(action) {
@@ -43,7 +49,9 @@ export function getActivityLabel(action) {
 }
 
 export function getActivityClass(action) {
-  return ACTIVITY_CLASSES[action] || "bg-slate-50 text-slate-700 border-slate-100";
+  return (
+    ACTIVITY_CLASSES[action] || "bg-slate-50 text-slate-700 border-slate-100"
+  );
 }
 
 export function getChangedFields(log, excludedKeys = ["id", "code"]) {
