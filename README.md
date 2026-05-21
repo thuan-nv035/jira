@@ -178,18 +178,6 @@ socket.onopen = () => {
 };
 ```
 
-Các event server broadcast:
 
-- `project.updated`
-- `member.added`
-- `column.created`
-- `column.updated`
-- `column.deleted`
-- `issue.created`
-- `issue.updated`
-- `issue.moved`
-- `issue.deleted`
-- `comment.created`
-- `notification.created`
 
 
