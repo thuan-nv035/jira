@@ -149,6 +149,11 @@ class Issue(Base, TimestampMixin):
     epic: Mapped[Optional["Epic"]] = relationship(back_populates="issues")
     sprint: Mapped[Optional["Sprint"]] = relationship(back_populates="issues")
 
+    subtasks: Mapped[list["Subtask"]] = relationship(
+        back_populates="issue",
+        cascade="all, delete-orphan",
+    )
+
     @property
     def is_overdue(self) -> bool:
         if not self.due_date:
@@ -332,3 +337,25 @@ class Sprint(Base, TimestampMixin):
 
     project: Mapped["Project"] = relationship(back_populates="sprints")
     issues: Mapped[list["Issue"]] = relationship(back_populates="sprint")
+
+class Subtask(Base, TimestampMixin):
+    __tablename__ = "subtasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(String(255))
+    is_done: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    assignee_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    issue: Mapped["Issue"] = relationship(back_populates="subtasks")
+    assignee: Mapped[Optional["User"]] = relationship()

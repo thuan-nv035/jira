@@ -329,3 +329,34 @@ class IssueEpicUpdate(BaseModel):
 
 class IssueSprintUpdate(BaseModel):
     sprint_id: Optional[int] = None
+
+class SubtaskCreate(BaseModel):
+    title: str
+    assignee_id: Optional[int] = None
+
+
+class SubtaskUpdate(BaseModel):
+    title: Optional[str] = None
+    is_done: Optional[bool] = None
+    assignee_id: Optional[int] = None
+
+
+class SubtaskAssigneeOut(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubtaskOut(BaseModel):
+    id: int
+    issue_id: int
+    title: str
+    is_done: bool
+    assignee_id: Optional[int] = None
+    assignee: Optional[SubtaskAssigneeOut] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
