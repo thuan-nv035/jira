@@ -1,6 +1,5 @@
 # Jira Clone API - FastAPI + PostgreSQL + WebSocket
 
-Backend mini giống Jira/Trello: Auth JWT, Project, Member, Kanban Column, Issue, Comment, Notification và realtime WebSocket theo project.
 
 ## 1. Cài đặt
 
